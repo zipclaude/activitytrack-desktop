@@ -221,6 +221,13 @@ class MainWindow(QMainWindow):
             self.tabs.addTab(self.reminders_tab, _("Promemoria"))
             actions.redraw.connect(self.reminders_tab.refresh)
         self.tabs.addTab(self.panel, _("Sincronizzazione"))
+        self.general = None
+        if actions is not None and notifier is not None:
+            from .general import GeneralPanel, Updates
+            self.updater = Updates(actions, notifier, self)
+            self.general = GeneralPanel(actions, self.updater)
+            self.tabs.addTab(self.general, _("Generale"))
+            actions.redraw.connect(self.general.refresh)
         self.setCentralWidget(self.tabs)
         self.resize(640, 560)
         # set when the application really quits: Qt 6's quit() asks every window to close first
