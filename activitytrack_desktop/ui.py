@@ -317,6 +317,15 @@ class Tray(QSystemTrayIcon):
         if self.actions is not None and self.session.account is not None:
             new = m.addAction(_("Nuova attività…"), lambda: self.actions.new_entry())
             new.setEnabled(work.policy.feature("entries"))
+            if work.policy.feature("todos"):
+                startable = self.actions.todos.startable() if work.policy.feature("entries") else []
+                if startable:
+                    sub = m.addMenu(_("Avvia Da fare"))
+                    for t in startable:
+                        who = work.name("client", t.get("clientUid"))
+                        sub.addAction(" · ".join(x for x in (t.get("title"), who) if x),
+                                      lambda u=t["uid"]: self.actions.start_todo(u))
+                m.addAction(_("Nuovo Da fare…"), lambda: self.actions.new_todo())
             m.addSeparator()
         status = m.addAction(sync_text if len(sync_text) < 70 else sync_text[:67] + "…")
         status.setEnabled(False)

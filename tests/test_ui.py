@@ -7,6 +7,7 @@ import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PyQt6.QtCore import QSettings  # noqa: E402
 from PyQt6.QtWidgets import QApplication  # noqa: E402
 
 from activitytrack_desktop import icons, wire  # noqa: E402
@@ -14,6 +15,11 @@ from activitytrack_desktop.pairing import Account  # noqa: E402
 from activitytrack_desktop.session import Session  # noqa: E402
 
 app = QApplication.instance() or QApplication([])
+# the filters remembered by the Home: in a folder of the tests, not the user's settings
+_settings_dir = tempfile.mkdtemp()
+app.setApplicationName("activitytrack-desktop-tests")
+QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, _settings_dir)
 
 
 class UiTest(unittest.TestCase):
@@ -112,6 +118,36 @@ class UiTest(unittest.TestCase):
         d = forms.QuickEntry(actions.work)
         d.confirm()
         self.assertIn("Serve il cliente", d.message.text())
+
+    def test_todos_on_the_home_and_in_the_tray(self):
+        from datetime import date
+
+        from activitytrack_desktop import forms
+        from activitytrack_desktop.home import Actions, Home, TodoRow
+        from activitytrack_desktop.ui import MainWindow, Tray
+        self.pair()
+        actions = Actions(self.session)
+        d = forms.TodoDialog(actions.todos)
+        d.title.setText("Rinnovo certificati")
+        d.client.setEditText("Hotel Belvedere")
+        d.plan.set(date.today(), 23 * 60 + 30, 15)
+        d.confirm()
+        self.assertEqual(d.result(), 1)
+        t = self.session.store.get("todo", d.result_uid)
+        self.assertEqual((t["planStartMin"], t["durationMin"]), (23 * 60 + 30, 15))
+        home = Home(actions)
+        rows = home.scroll.widget().findChildren(TodoRow)
+        self.assertEqual(len(rows), 1)
+        w = MainWindow(self.session, self.service, actions)
+        tray = Tray(self.session, self.service, w, quit_app=lambda: None, actions=actions)
+        start = [a for a in tray.contextMenu().actions() if a.text() == "Avvia Da fare"]
+        self.assertEqual([a.text() for a in start[0].menu().actions()], ["Rinnovo certificati · Hotel Belvedere"])
+        self.assertIn("Nuovo Da fare…", self.menu_texts(tray.contextMenu()))
+        actions.todo_done(d.result_uid)
+        self.assertEqual(home.scroll.widget().findChildren(TodoRow), [])
+        # shown again with the done ones in the filter
+        home.filters.show_actions["DONE"].setChecked(True)
+        self.assertEqual(len(home.scroll.widget().findChildren(TodoRow)), 1)
 
     def test_closing_hides_quitting_closes(self):
         from activitytrack_desktop.ui import MainWindow

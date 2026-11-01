@@ -6,11 +6,14 @@ Every field takes free text: company, client and role complete from the
 master data, a new name becomes a personal record when the policy allows.
 """
 
-from PyQt6.QtCore import QDateTime, Qt
+from datetime import date
+
+from PyQt6.QtCore import QDate, QDateTime, QTime, Qt
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
-    QCheckBox, QComboBox, QCompleter, QDateTimeEdit, QDialog, QDialogButtonBox, QFormLayout, QGroupBox, QHBoxLayout,
-    QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QRadioButton, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QCompleter, QDateEdit, QDateTimeEdit, QDialog, QDialogButtonBox, QFormLayout, QGroupBox,
+    QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QRadioButton, QSpinBox, QTimeEdit,
+    QVBoxLayout, QWidget,
 )
 
 from .i18n import _
@@ -524,3 +527,147 @@ def stop(work, uid, parent=None):
     if status == TO_COMPLETE:
         StopDialog(work, uid, parent).exec()
     return status
+
+
+class _DayTime(QWidget):
+    """An optional day with an optional time (a due date, a plan)."""
+
+    def __init__(self, label, with_duration=False, parent=None):
+        super().__init__(parent)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        self.on = QCheckBox(label)
+        self.day = QDateEdit(QDate.currentDate(), calendarPopup=True)
+        self.day.setDisplayFormat("ddd dd/MM/yyyy")
+        self.timed = QCheckBox(_("alle"))
+        self.time = QTimeEdit(QTime(9, 0))
+        self.time.setDisplayFormat("HH:mm")
+        for w in (self.on, self.day, self.timed, self.time):
+            lay.addWidget(w)
+        self.duration = None
+        if with_duration:
+            self.duration = QSpinBox(minimum=0, maximum=24 * 60, singleStep=15, suffix=_(" min"))
+            self.duration.setSpecialValueText(_("senza durata"))
+            lay.addWidget(self.duration)
+        lay.addStretch()
+        self.on.toggled.connect(self._enable)
+        self.timed.toggled.connect(self._enable)
+        self._enable()
+
+    def _enable(self):
+        on = self.on.isChecked()
+        self.day.setEnabled(on)
+        self.timed.setEnabled(on)
+        self.time.setEnabled(on and self.timed.isChecked())
+        if self.duration is not None:
+            self.duration.setEnabled(on and self.timed.isChecked())
+
+    def set(self, day, minute=None, duration=None):
+        self.on.setChecked(bool(day))
+        if day:
+            self.day.setDate(QDate(day.year, day.month, day.day))
+        self.timed.setChecked(minute is not None)
+        if minute is not None:
+            self.time.setTime(QTime(minute // 60, minute % 60))
+        if self.duration is not None:
+            self.duration.setValue(duration or 0)
+        self._enable()
+
+    def value(self):
+        """(day, minute, duration) or Nones."""
+        if not self.on.isChecked():
+            return None, None, None
+        d = self.day.date()
+        day = date(d.year(), d.month(), d.day())
+        if not self.timed.isChecked():
+            return day, None, None
+        t = self.time.time()
+        duration = self.duration.value() or None if self.duration is not None else None
+        return day, t.hour() * 60 + t.minute(), duration
+
+
+class TodoDialog(_Dialog):
+    """A to-do, new or existing: the fields the policy shows."""
+
+    def __init__(self, todos, parent=None, uid=None, plan=None):
+        super().__init__(_("Da fare") if uid else _("Nuovo Da fare"), parent)
+        self.todos, self.uid = todos, uid
+        self.result_uid = uid
+        self.setMinimumWidth(560)
+        work = todos.work
+        p = work.policy
+        t = todos.todo(uid) if uid else {}
+        form = QFormLayout()
+        self.title = QLineEdit(t.get("title") or "")
+        form.addRow(_("Titolo"), self.title)
+        self.company = MasterCombo(work, "company")
+        self.client = MasterCombo(work, "client")
+        if p.field("company").visible:
+            form.addRow(field_label(p, "company"), self.company)
+        form.addRow(field_label(p, "client"), self.client)
+        self.notes = QPlainTextEdit(t.get("notes") or "")
+        self.notes.setTabChangesFocus(True)
+        self.notes.setMaximumHeight(110)
+        form.addRow(field_label(p, "notes"), self.notes)
+        self.refs = QPlainTextEdit(t.get("refs") or "")
+        self.refs.setTabChangesFocus(True)
+        self.refs.setMaximumHeight(60)
+        self.refs.setPlaceholderText(_("ticket, link: uno per riga"))
+        if p.field("refs").visible:
+            form.addRow(_("Riferimenti"), self.refs)
+        self.due = _DayTime(_("entro"))
+        self.due.set(_iso(t.get("dueDate")), t.get("dueTimeMin"))
+        if p.field("todoDue").visible:
+            form.addRow(field_label(p, "todoDue"), self.due)
+        self.plan = _DayTime(_("il"), with_duration=True)
+        self.plan.set(_iso(t.get("planDate")), t.get("planStartMin"), t.get("durationMin"))
+        if plan is not None:
+            self.plan.set(*plan)
+        if p.field("todoPlan").visible and p.feature("planning"):
+            form.addRow(field_label(p, "todoPlan"), self.plan)
+        self.priority = QComboBox()
+        self.priority.addItem("—", None)
+        for i in range(1, 6):
+            self.priority.addItem(f"P{i}", i)
+        self.priority.setCurrentIndex(max(0, self.priority.findData(t.get("priority"))))
+        if p.field("todoPriority").visible:
+            form.addRow(field_label(p, "todoPriority"), self.priority)
+        if uid:
+            self.company.set_value(t.get("companyUid"))
+            self.client.set_value(t.get("clientUid"))
+        self.lay.addLayout(form)
+        extra = []
+        if uid and p.feature("deleteTodos") and not t.get("externalKey"):
+            extra.append((_("Elimina"), self.delete))
+        self.buttons(_("Salva"), extra)
+        self.title.setFocus()
+
+    def confirm(self):
+        due_day, due_min, _d = self.due.value()
+        plan_day, plan_min, duration = self.plan.value()
+        try:
+            self.result_uid = self.todos.save(
+                self.uid, self.title.text(), company=self.company.value(), client=self.client.value(),
+                notes=self.notes.toPlainText(), refs=self.refs.toPlainText(), due_date=due_day, due_min=due_min,
+                plan_date=plan_day, plan_min=plan_min, duration_min=duration, priority=self.priority.currentData())
+        except WorkError as e:
+            self.fail(e)
+            return
+        self.accept()
+
+    def delete(self):
+        if QMessageBox.question(self, _("Elimina"), _("Eliminare questo Da fare?")) != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.todos.delete(self.uid)
+        except WorkError as e:
+            self.fail(e)
+            return
+        self.accept()
+
+
+def _iso(text):
+    try:
+        return date.fromisoformat(text) if text else None
+    except ValueError:
+        return None

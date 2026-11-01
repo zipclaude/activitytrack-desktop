@@ -10,12 +10,23 @@ from .work import ACTIVE, CLOSED, PAUSE, SUSPENDED, TO_COMPLETE, TRAVEL, WORK
 FIELDS = {
     "company": _("Azienda"), "client": _("Cliente"), "role": _("Ruolo"), "quickPick": _("Scelta rapida"),
     "description": _("Descrizione"), "locality": _("Località"), "notes": _("Note"), "tags": _("Tag"),
-    "times": _("Tempi"),
+    "times": _("Tempi"), "todoPriority": _("Priorità"), "todoDue": _("Scadenza"), "todoPlan": _("Pianificazione"),
 }
 
 MODES = {WORK: _("In lavoro"), PAUSE: _("In pausa"), TRAVEL: _("In viaggio")}
 KINDS = {WORK: _("Lavoro"), PAUSE: _("Pausa"), TRAVEL: _("Viaggio")}
-STATES = {SUSPENDED: _("Sospesa"), TO_COMPLETE: _("Da completare"), CLOSED: _("Chiusa")}
+STATES = {SUSPENDED: _("Sospesa"), TO_COMPLETE: _("Dettagli mancanti"), CLOSED: _("Chiusa")}
+
+# the Home list (app HomeList.kt, HomeTabs.kt)
+SECTIONS = {
+    "overdue": _("In ritardo"), "missing": _("Dettagli mancanti"), "today": _("Oggi"),
+    "next": _("Prossimi giorni"), "earlier": _("Giorni precedenti"), "no_date": _("Senza data"),
+    "ignored": _("Ignorate"),
+}
+WINDOWS = {-1: _("Oggi"), 24: _("24 h"), 72: _("3 gg"), 168: _("7 gg"), 720: _("30 gg"), 0: _("Tutti")}
+SHOWS = {"TODO": _("Da fare"), "MISSING": _("Dettagli mancanti"), "DONE": _("Fatte"), "IGNORED": _("Ignorate")}
+TODO_STATES = {"open": _("Aperta"), "planned": _("Pianificata"), "overdue": _("In ritardo"), "done": _("Fatta"),
+               "ignored": _("Ignorata")}
 
 ERRORS = {
     "client_required": _("Serve il cliente (o un viaggio)."),
@@ -31,7 +42,13 @@ ERRORS = {
     "times_locked": _("La policy non permette di modificare i tempi."),
     "illegal": _("Comando non possibile in questo stato."),
     "feature": _("Funzione disattivata dalla policy."),
-    "not_found": _("L'attività non c'è più (eliminata su un altro dispositivo?)."),
+    "not_found": _("Non c'è più (eliminata su un altro dispositivo?)."),
+    "title_required": _("Serve il titolo."),
+    "plan_day_required": _("Per un orario pianificato serve il giorno."),
+    "plan_time_required": _("Per una durata serve l'orario di inizio."),
+    "invalid_time": _("Orario non valido."),
+    "invalid_priority": _("La priorità va da 1 a 5."),
+    "imported": _("Un Da fare del gestionale non si elimina: si ignora."),
 }
 
 
@@ -64,3 +81,26 @@ def clock(ms):
     if t.date() == datetime.now().date():
         return t.strftime("%H:%M")
     return t.strftime("%d/%m %H:%M")
+
+
+def todo_when(t, tz):
+    """When a to-do is planned or due, as the app's rows: "lun 02/11 15:00–15:30", "scad. 05/11"."""
+    from .todos import plan_bounds, _day
+    days = ("lun", "mar", "mer", "gio", "ven", "sab", "dom")
+    plan = plan_bounds(t, tz)
+    today = datetime.now(tz).date()
+    if plan:
+        start, end, all_day = plan
+        d = start.date()
+        day = "" if d == today else f"{days[d.weekday()]} {d.strftime('%d/%m')} "
+        if all_day:
+            return (day or _("oggi ")).strip()
+        span = start.strftime("%H:%M") + (("–" + end.strftime("%H:%M")) if end > start else "")
+        return day + span
+    due = _day(t.get("dueDate"))
+    if due:
+        text = _("scad. ") + f"{days[due.weekday()]} {due.strftime('%d/%m')}"
+        if t.get("dueTimeMin") is not None:
+            text += f" {t['dueTimeMin'] // 60:02d}:{t['dueTimeMin'] % 60:02d}"
+        return text
+    return ""
