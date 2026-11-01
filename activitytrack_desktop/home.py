@@ -17,7 +17,7 @@ from activitytrack.policy import stored
 from activitytrack.texts import KINDS, clock, error_text, hm, state_label
 from activitytrack.todos import DEFAULT_SHOW, SHOWS, WINDOWS, Todos
 from activitytrack.work import (
-    ACTIVE, PAUSE, REOPEN, STOP, SUSPEND, SUSPENDED, TO_COMPLETE, TRAVEL, WORK, Work, WorkError,
+    ACTIVE, PAUSE, REOPEN, STOP, SUSPENDED, TO_COMPLETE, TRAVEL, WORK, Work, WorkError,
 )
 
 from . import forms
@@ -27,26 +27,8 @@ COLOURS = {WORK: "#2e7d32", PAUSE: "#f9a825", TRAVEL: "#1565c0", SUSPENDED: "#ef
 
 
 def commands(entry, policy):
-    """[(label, command)] the state allows, as the app's card buttons."""
-    status, mode = entry.get("status"), entry.get("mode")
-    travel = policy.feature("travel")
-    out = []
-    if status == ACTIVE:
-        if mode != WORK:
-            out.append((_("Riprendi") if mode == PAUSE else _("Lavoro"), WORK))
-        if mode != PAUSE:
-            out.append((_("Pausa"), PAUSE))
-        if mode != TRAVEL and travel:
-            out.append((_("Viaggio"), TRAVEL))
-        if mode != PAUSE:
-            out.append((_("Sospendi"), SUSPEND))
-        out.append((_("Stop"), STOP))
-    elif status == SUSPENDED:
-        out.append((_("Riprendi"), WORK))
-        if travel:
-            out.append((_("Viaggio"), TRAVEL))
-        out.append((_("Stop"), STOP))
-    return out
+    """[(label, command)] the state allows, as the app's card buttons (the library's, for every interface)."""
+    return texts.entry_commands(entry, policy)
 
 
 class Actions(QObject):
