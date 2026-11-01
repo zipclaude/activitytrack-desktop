@@ -6,18 +6,13 @@ network comes back and after the PC slept. The network calls run in a
 worker thread; the interface hears the outcome through signals.
 """
 
-import json
 import time
 
 from PyQt6.QtCore import QObject, QThread, QTimer, pyqtSignal as Signal, pyqtSlot as Slot
 
-from activitytrack.net import NetworkError
-from activitytrack.policy import Policy
-from activitytrack.sync import SyncEngine, SyncFailed, SyncIncompatible, SyncRevoked
+from activitytrack.sync import Runner
 
 TICK_MS = 30_000
-# a policy change does not move the server's revision: asked again this often
-POLICY_EVERY_S = 300
 DEBOUNCE_MS = 3_000
 # how often the data folder is looked at for the other interfaces' changes
 WATCH_MS = 2_000
@@ -31,62 +26,16 @@ class _Worker(QObject):
     def __init__(self, session):
         super().__init__()
         self.session = session
-        self._policy_at = 0
+        self.runner = Runner(session)
 
     @Slot(bool)
     def run(self, full):
         """[full]: sync even when the server did not move."""
-        http = self.session.http()
-        if http is None:
-            self.finished.emit("unpaired", "")
-            return
-        store = self.session.store
-        engine = SyncEngine(store, http)
         try:
-            if not full and not store.has_pending():
-                head = engine.head()
-                if head.get("rev") == store.cursor:
-                    store.set_state("incompatible", None)
-                    changed = self._policy(http, store, force=False)
-                    self.finished.emit("ok" if changed else "idle", "")
-                    return
-            result = engine.sync()
-            store.set_state("incompatible", None)
-            self._policy(http, store, force=True)
-            self.finished.emit("ok", result.errors[0] if result.errors else "")
-        except SyncRevoked:
-            store.set_state("revoked", True)
-            self.finished.emit("revoked", "")
-        except SyncIncompatible as e:
-            store.set_state("incompatible", e.code)
-            self.finished.emit("incompatible", e.code)
-        except (NetworkError, SyncFailed) as e:
-            self.finished.emit("offline" if isinstance(e, NetworkError) else "failed", str(e))
-        except Exception as e:
-            self.finished.emit("failed", f"{type(e).__name__}: {e}")
+            self.finished.emit(*self.runner.run(full))
         finally:
             # the worker thread's connection: the next run may come after a long sleep
-            store.close()
-
-    def _policy(self, http, store, force):
-        """The user's policy (server SYNC.md §8); True when it changed. A text that is no policy keeps the last."""
-        now = time.monotonic()
-        if not force and now - self._policy_at < POLICY_EVERY_S:
-            return False
-        self._policy_at = now
-        reply = http.send("GET", "policy")
-        if reply.status != 200:
-            return False
-        try:
-            text = json.loads(reply.body).get("policy")
-        except (ValueError, AttributeError):
-            return False
-        if text is not None and Policy.parse(text) is None:
-            return False
-        if text == store.get_state("policy"):
-            return False
-        store.set_state("policy", text)
-        return True
+            self.session.store.close()
 
 
 class SyncService(QObject):
