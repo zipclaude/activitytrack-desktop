@@ -244,3 +244,26 @@ class GeneralUiTest(unittest.TestCase):
                         "settings": {"updateCheck": {"value": True, "locked": True}}})
         self.assertEqual(update_settings(fixed)[0], True)
         QSettings().remove("updates")
+
+
+class WatchTest(unittest.TestCase):
+    def test_another_interfaces_change_is_seen(self):
+        from activitytrack.store import Store
+        from activitytrack_desktop.service import SyncService
+        with tempfile.TemporaryDirectory() as d:
+            session = Session(d, use_keyring=False)
+            service = SyncService(session)
+            seen = []
+            service.elsewhere.connect(lambda: seen.append(True))
+            service._watch_data()
+            service._watch_data()
+            self.assertEqual(seen, [])
+            # another connection (the cli in another process) commits
+            other = Store(session.folder / "activitytrack.sqlite3")
+            other.write("todo", "t1", {"title": "Dalla CLI"}, now_ms=1)
+            service._watch_data()
+            self.assertEqual(seen, [True])
+            self.assertTrue(service._debounce.isActive())
+            other.close()
+            service.stop()
+            session.store.close()
