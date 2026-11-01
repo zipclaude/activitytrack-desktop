@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux:
+    # on Linux the desktop runs on the distribution's packages only (docs/DESIGN.md §4):
+    # the oldest and the newest Qt of the targets
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["debian:trixie", "debian:forky", "ubuntu:24.04"]
+    steps:
+      - name: Distribution packages
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git ca-certificates \
+            python3 python3-pyqt6 python3-cryptography python3-keyring flake8 libegl1
+      - uses: actions/checkout@v4
+      - name: Lint
+        run: flake8 activitytrack_desktop tests
+      - name: Tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python3 -m unittest discover -s tests -t . -v
+
+  windows:
+    # the libraries the installer bundles (requirements-windows.txt)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Libraries
+        run: python -m pip install -r requirements-windows.txt
+      - name: Tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m unittest discover -s tests -t . -v
