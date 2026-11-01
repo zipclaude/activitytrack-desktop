@@ -1,3 +1,14 @@
+activitytrack-desktop (0.9.4~beta2) unstable; urgency=medium
+
+  * The rules, the local copy and the sync come from the library
+    python3-activitytrack, shared with the command line (activitytrack-cli)
+    and the text interface (activitytrack-tui): one application, one data
+    folder (~/.local/share/activitytrack), one pairing; what they do shows
+    at once. The folder of 0.9.4-beta1 moves there at the first start.
+  * Windows: the translations are in the bundle.
+
+ -- ActivityTrack Desktop <flavio-claude@zipman.it>  Mon, 02 Nov 2026 00:30:00 +0100
+
 activitytrack-desktop (0.9.4~beta1) unstable; urgency=medium
 
   * Reminders of the phone, as desktop notifications with their buttons:

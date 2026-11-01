@@ -1,4 +1,4 @@
-Version 0.9.4-beta1 (November 2026). ActivityTrack Desktop is the PC app of
+Version 0.9.4-beta2 (November 2026). ActivityTrack Desktop is the PC app of
 ActivityTrack. It lives in the notification area, next to the clock, and keeps
 the running activities and the *To-dos* a click away. So an activity, even a
 short one, goes in from the keyboard instead of the phone.
@@ -15,17 +15,27 @@ Without a network the PC keeps working: the changes leave when the network is
 back. Reports, master data and management systems stay with the phone and the
 web.
 
+On the PC ActivityTrack is **one application** with three interfaces: this
+one in the notification area, the command line (`activitytrack`, package
+`activitytrack-cli`) and the full-screen terminal interface
+(`activitytrack-tui`). They use the same data (`~/.local/share/activitytrack`,
+on Windows `%APPDATA%\activitytrack`) and the same pairing: what is done with
+one shows at once in the others. They all depend on the library
+`python3-activitytrack`.
+
 ## 2. Installing
 
 From the releases page
 (<https://github.com/zipclaude/activitytrack-desktop/releases>):
 
 - **Debian 13 and 14, Ubuntu 24.04 and 26.04**: the package of one's
-  distribution, installed with
-  `sudo apt install ./activitytrack-desktop_<version>-<distro>_all.deb`.
+  distribution with the library's (from its page,
+  <https://github.com/zipclaude/python3-activitytrack/releases>), installed with
+  `sudo apt install ./python3-activitytrack_<version>-<distro>_all.deb ./activitytrack-desktop_<version>-<distro>_all.deb`.
   ActivityTrack shows in the applications menu.
 - **Other Linux distributions**: Python 3.11 or newer, PyQt6, cryptography and
-  keyring from the distribution's packages. Unpack
+  keyring from the distribution's packages, and the library (`pip install`
+  from its repository). Unpack
   `activitytrack-desktop-<version>.tar.gz` and, in its folder, start
   `python3 -m activitytrack_desktop`.
 - **Windows**: `ActivityTrackDesktop-<version>-setup.exe`. It installs for the

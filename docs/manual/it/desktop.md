@@ -1,4 +1,4 @@
-Versione 0.9.4-beta1 (novembre 2026). ActivityTrack Desktop è l'app per il PC
+Versione 0.9.4-beta2 (novembre 2026). ActivityTrack Desktop è l'app per il PC
 di ActivityTrack. Sta nell'area di notifica, vicino all'orologio, e tiene a un
 clic le attività in corso e i *Da fare*. Così un'attività, anche breve, si
 registra dalla tastiera, senza prendere il telefono.
@@ -12,17 +12,27 @@ registra dalla tastiera, senza prendere il telefono.
 Senza rete il PC continua a lavorare: le modifiche partono quando la rete
 torna. Report, anagrafiche e gestionali restano al telefono e al web.
 
+Sul PC ActivityTrack è **un'applicazione sola**, con tre interfacce: questa
+nell'area di notifica, la riga di comando (`activitytrack`, pacchetto
+`activitytrack-cli`) e l'interfaccia a schermo intero nel terminale
+(`activitytrack-tui`). Usano gli stessi dati (`~/.local/share/activitytrack`,
+su Windows `%APPDATA%\activitytrack`) e la stessa associazione: quello che si
+fa con una compare subito nelle altre. Tutte dipendono dalla libreria
+`python3-activitytrack`.
+
 ## 2. Installazione
 
 Dalla pagina delle release
 (<https://github.com/zipclaude/activitytrack-desktop/releases>):
 
 - **Debian 13 e 14, Ubuntu 24.04 e 26.04**: il pacchetto della propria
-  distribuzione, installato con
-  `sudo apt install ./activitytrack-desktop_<versione>-<distro>_all.deb`.
+  distribuzione insieme a quello della libreria (dalla sua pagina,
+  <https://github.com/zipclaude/python3-activitytrack/releases>), installati con
+  `sudo apt install ./python3-activitytrack_<versione>-<distro>_all.deb ./activitytrack-desktop_<versione>-<distro>_all.deb`.
   ActivityTrack compare nel menu delle applicazioni.
 - **Altre distribuzioni Linux**: servono Python 3.11 o più recente, PyQt6,
-  cryptography e keyring dai pacchetti della distribuzione. Si scompatta
+  cryptography e keyring dai pacchetti della distribuzione, e la libreria
+  (`pip install` dal suo repository). Si scompatta
   `activitytrack-desktop-<versione>.tar.gz` e, nella sua cartella, si avvia
   `python3 -m activitytrack_desktop`.
 - **Windows**: `ActivityTrackDesktop-<versione>-setup.exe`. Si installa per
