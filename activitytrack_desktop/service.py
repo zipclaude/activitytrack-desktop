@@ -8,7 +8,7 @@ worker thread; the interface hears the outcome through signals.
 
 import time
 
-from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
+from PyQt6.QtCore import QObject, QThread, QTimer, pyqtSignal as Signal, pyqtSlot as Slot
 
 from .net import NetworkError
 from .sync import SyncEngine, SyncFailed, SyncIncompatible, SyncRevoked
@@ -120,7 +120,7 @@ class SyncService(QObject):
         self.sync(full=slept)
 
     def _watch_network(self):
-        from PySide6.QtNetwork import QNetworkInformation
+        from PyQt6.QtNetwork import QNetworkInformation
 
         if not QNetworkInformation.loadDefaultBackend():
             return

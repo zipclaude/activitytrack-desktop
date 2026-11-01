@@ -5,8 +5,8 @@ of the state (the app's: work green, pause yellow, travel blue; grey when
 nothing runs) with its sign, and a red dot when the sync needs attention.
 """
 
-from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PyQt6.QtCore import QPointF, QRectF, Qt
+from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 
 IDLE, WORK, PAUSE, TRAVEL = "idle", "work", "pause", "travel"
 COLOURS = {IDLE: "#6f7680", WORK: "#2e7d32", PAUSE: "#f9a825", TRAVEL: "#1565c0"}

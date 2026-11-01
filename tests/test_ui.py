@@ -7,7 +7,7 @@ import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PyQt6.QtWidgets import QApplication  # noqa: E402
 
 from activitytrack_desktop import icons, wire  # noqa: E402
 from activitytrack_desktop.pairing import Account  # noqa: E402
@@ -61,6 +61,27 @@ class UiTest(unittest.TestCase):
         self.assertEqual(p.values["pending"].text(), "1")
         self.assertTrue(p.unpair.isVisibleTo(p))
         self.assertIn("file leggibile solo dal tuo utente", p.secret.text())
+
+    def test_the_tray(self):
+        from activitytrack_desktop.ui import MainWindow, Tray
+        w = MainWindow(self.session, self.service)
+        t = Tray(self.session, self.service, w, quit_app=lambda: None)
+        self.assertIn("Non associato", t.toolTip())
+        self.assertFalse(t.sync_now.isVisible())
+        self.pair()
+        t.refresh()
+        self.assertTrue(t.sync_now.isVisible())
+
+    def test_closing_hides_quitting_closes(self):
+        from activitytrack_desktop.ui import MainWindow
+        w = MainWindow(self.session, self.service)
+        w.show()
+        # refused, the window only hides: the tray icon stays
+        self.assertFalse(w.close())
+        self.assertFalse(w.isVisible())
+        w.show()
+        w.quitting = True
+        self.assertTrue(w.close())
 
     def test_icons(self):
         for state in (icons.IDLE, icons.WORK, icons.PAUSE, icons.TRAVEL):

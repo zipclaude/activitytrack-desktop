@@ -9,8 +9,8 @@ description = "Tray application of ActivityTrack for the PC"
 readme = "README.md"
 license = "GPL-3.0-or-later"
 requires-python = ">=3.11"
-# on Linux from the distribution (python3-pyside6.*, python3-cryptography, python3-keyring)
-dependencies = ["PySide6-Essentials>=6.6", "cryptography>=38", "keyring>=23"]
+# on Linux from the distribution (python3-pyqt6, python3-cryptography, python3-keyring)
+dependencies = ["PyQt6>=6.6", "cryptography>=38", "keyring>=23"]
 
 [project.scripts]
 activitytrack-desktop = "activitytrack_desktop.main:main"

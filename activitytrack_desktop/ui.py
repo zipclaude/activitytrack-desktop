@@ -4,9 +4,9 @@
 import threading
 from datetime import datetime
 
-from PySide6.QtCore import QObject, Qt, Signal
-from PySide6.QtGui import QAction, QGuiApplication
-from PySide6.QtWidgets import (
+from PyQt6.QtCore import QObject, Qt, pyqtSignal as Signal
+from PyQt6.QtGui import QAction, QGuiApplication
+from PyQt6.QtWidgets import (
     QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
     QPushButton, QSystemTrayIcon, QVBoxLayout, QWidget,
 )
@@ -209,6 +209,8 @@ class MainWindow(QMainWindow):
         self.panel = SyncPanel(session, service)
         self.setCentralWidget(self.panel)
         self.resize(560, 420)
+        # set when the application really quits: Qt 6's quit() asks every window to close first
+        self.quitting = False
 
     def show_up(self):
         self.panel.refresh()
@@ -218,6 +220,9 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         # closing the window leaves the tray icon: "Esci" quits
+        if self.quitting:
+            event.accept()
+            return
         event.ignore()
         self.hide()
 

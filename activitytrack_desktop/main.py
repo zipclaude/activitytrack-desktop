@@ -4,11 +4,12 @@
 import argparse
 import hashlib
 import sys
+import traceback
 from pathlib import Path
 
-from PySide6.QtCore import QLibraryInfo, QLocale, QStandardPaths, QTranslator
-from PySide6.QtNetwork import QLocalServer, QLocalSocket
-from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
+from PyQt6.QtCore import QLibraryInfo, QLocale, QStandardPaths, QTranslator
+from PyQt6.QtNetwork import QLocalServer, QLocalSocket
+from PyQt6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
 from . import __version__
 from .i18n import _
@@ -27,6 +28,25 @@ def _already_running(name):
         s.disconnectFromServer()
         return True
     return False
+
+
+def _log_errors(folder):
+    """
+    PyQt aborts the process on an exception escaping a slot: a tray
+    application must outlive a bug, so it is written to errors.log instead.
+    """
+    log = folder / "errors.log"
+
+    def hook(kind, value, tb):
+        text = "".join(traceback.format_exception(kind, value, tb))
+        sys.stderr.write(text)
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            with open(log, "a", encoding="utf-8") as f:
+                f.write(text + "\n")
+        except OSError:
+            pass
+    sys.excepthook = hook
 
 
 def main(argv=None):
@@ -50,6 +70,7 @@ def main(argv=None):
 
     folder = Path(args.data) if args.data else Path(
         QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation))
+    _log_errors(folder)
     # one instance per data folder: a local socket on Linux, a named pipe on Windows
     # (hash() changes at every start: a stable digest instead)
     name = f"{APP_ID}-{hashlib.sha1(str(folder.resolve()).encode()).hexdigest()[:12]}"
@@ -68,8 +89,12 @@ def main(argv=None):
     window = MainWindow(session, service)
 
     def quit_app():
+        window.quitting = True
         service.stop()
         app.quit()
+
+    # logging out of the desktop session closes the windows: the window must not refuse
+    app.commitDataRequest.connect(lambda _manager: setattr(window, "quitting", True))
 
     def on_connection():
         c = server.nextPendingConnection()
@@ -84,7 +109,7 @@ def main(argv=None):
         tray = None
         QMessageBox.information(None, "ActivityTrack", _(
             "Il desktop non ha un'area di notifica: ActivityTrack resta aperto in una finestra."))
-        window.closeEvent = lambda e: (e.accept(), quit_app())
+        window.closeEvent = lambda e: (e.accept(), quit_app() if not window.quitting else None)
     if not args.hidden or tray is None or session.account is None:
         window.show_up()
     service.start()
