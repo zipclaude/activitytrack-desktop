@@ -110,7 +110,14 @@ jobs:
           for f in activitytrack-desktop_*~*_all.deb; do mv "$f" "$(echo "$f" | tr '~' '-')"; done
           sha256sum * > SHA256SUMS && cat SHA256SUMS && cd ..
           {
-            echo "ActivityTrack Desktop $V, for ActivityTrack Web $V."
+            case "$V" in
+              *-*) echo "ActivityTrack Desktop $V: a test release, not for daily use yet."
+                   echo
+                   echo "A server older than ActivityTrack Web 0.9.4 lists the PC among the phones: pair the phone first, or check on the web that the phone keeps \"Invia ai gestionali\"." ;;
+              *) echo "ActivityTrack Desktop $V, for ActivityTrack Web $V." ;;
+            esac
+            echo
+            echo "It needs an ActivityTrack Web server to pair with (Dispositivi → Associa un dispositivo, then paste the link)."
             echo
             echo "- Debian 13 / 14, Ubuntu 24.04 / 26.04: \`apt install ./activitytrack-desktop_${V}-<distro>_all.deb\` (deb13, deb14, ubuntu24.04, ubuntu26.04)"
             echo "- Other distributions: \`activitytrack-desktop-$V.tar.gz\`, see [README](https://github.com/${GITHUB_REPOSITORY}/blob/v$V/README.md)"

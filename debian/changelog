@@ -1,6 +1,12 @@
-activitytrack-desktop (0.9.4~dev) unstable; urgency=medium
+activitytrack-desktop (0.9.3~alfa1) unstable; urgency=medium
 
-  * First package: tray icon, pairing with ActivityTrack Web by the web's
-    link, sync both ways as a paired device (docs/DESIGN.md, phase 1).
+  * First test release (docs/DESIGN.md, phases 1-3).
+  * Tray icon in the mode of the running activity, its commands in the
+    menu; pairing with ActivityTrack Web by the web's link; sync both ways
+    as a paired device, offline included.
+  * Activities: quick entry, full form, stop sheet, times; free text in
+    every field.
+  * To-dos: the Home list with the app's filters, start, done, ignore,
+    postpone, new and planned.
 
- -- ActivityTrack Desktop <flavio-claude@zipman.it>  Sun, 01 Nov 2026 13:00:00 +0100
+ -- ActivityTrack Desktop <flavio-claude@zipman.it>  Sun, 01 Nov 2026 16:00:00 +0100
