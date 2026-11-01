@@ -37,6 +37,8 @@ systems, attachments upload (first versions), absences, calendar export.
 | D6 | Version aligned with app and web. |
 | D7 | Global shortcut: later, once the rest is stable. |
 | D8 | Windows too, before the release (2026-11-01). |
+| D9 | Qt through PyQt6 (2026-11-01, §4). |
+| D10 | No costs: no paid certificates or stores; the Windows installer is not signed (2026-11-01). |
 
 ## 3. Desktop environments
 
@@ -242,9 +244,10 @@ from the other at the next sync, where the answer is a synced change
   Inno Setup; Start menu entry, autostart option, uninstaller. The
   bundled libraries are pinned in `requirements-windows.txt`, with the
   same versions as Debian 13 where possible.
-- **Signing on Windows**: without a code-signing certificate SmartScreen
-  warns at the first run ("Esegui comunque"). A certificate costs a yearly
-  fee: to decide before the release.
+- **Not signed on Windows** (D10): SmartScreen warns at the first run of
+  the installer ("Ulteriori informazioni" → "Esegui comunque"); the user
+  manual shows it, and the release page gives the installer's SHA-256 to
+  check it.
 - A user manual chapter (it/en) and screenshots; the server's admin manual
   says the desktop exists.
 
@@ -277,4 +280,4 @@ from the other at the next sync, where the answer is a synced change
 
 ## 11. Open points
 
-- Code signing on Windows (§8).
+None for now.
