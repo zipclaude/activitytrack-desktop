@@ -163,3 +163,66 @@ class UiTest(unittest.TestCase):
     def test_icons(self):
         for state in (icons.IDLE, icons.WORK, icons.PAUSE, icons.TRAVEL):
             self.assertFalse(icons.icon(state, alert=True).isNull())
+
+
+class FakeNotifier:
+    native = True
+
+    def __init__(self):
+        from PyQt6.QtCore import QObject, pyqtSignal
+
+        class _S(QObject):
+            answered = pyqtSignal(str, str)
+        self._s = _S()
+        self.answered = self._s.answered
+        self.shown = []
+
+    def show(self, key, title, body, actions=()):
+        self.shown.append((key, title, body, [a for a, _l in actions]))
+
+
+class RemindersUiTest(unittest.TestCase):
+    def setUp(self):
+        from activitytrack_desktop.home import Actions
+        from activitytrack_desktop.service import SyncService
+        self.dir = tempfile.TemporaryDirectory()
+        self.session = Session(self.dir.name, use_keyring=False)
+        self.service = SyncService(self.session)
+        a = Account("https://at.example.com", None, "d1", "anna", "Anna", "user", "Infra")
+        self.session.store.set_state("account", a.to_json())
+        self.session.vault.put("d1", "tok")
+        self.session.store.pulled({"type": "client", "uid": "c1", "rev": 1,
+                                   "fields": {"name": "Biblioteca", "archived": False}})
+        self.actions = Actions(self.session)
+        QSettings().remove("reminders")
+
+    def tearDown(self):
+        self.service.stop()
+        self.session.store.close()
+        self.dir.cleanup()
+
+    def test_confirm_posted_and_answered(self):
+        from activitytrack_desktop.reminder_ui import Reminders
+        from activitytrack_desktop.work import StartRequest
+        work = self.actions.work
+        now = [work.clock()]
+        work.clock = lambda: now[0]
+        uid = work.start(StartRequest(client="c1", activity="Rete", start_ms=now[0] - 40 * 60_000))
+        n = FakeNotifier()
+        r = Reminders(self.actions, n, show_window=lambda: None)
+        r.fire()
+        self.assertEqual(len(n.shown), 1)
+        key, title, _body, buttons = n.shown[0]
+        expected = ("confirm", "Ancora su Biblioteca?", ["yes", "pause", "stop_at"])
+        self.assertEqual((key.split("|")[0], title, buttons), expected)
+        # shown once: the next only after another interval
+        r.fire()
+        self.assertEqual(len(n.shown), 1)
+        n.answered.emit(key, "pause")
+        self.assertEqual(self.session.store.get("entry", uid)["mode"], "PAUSE")
+        # switched off: not shown, still recorded
+        QSettings().setValue("reminders/on/pause", False)
+        now[0] += 20 * 60_000
+        r.fire()
+        self.assertEqual(len(n.shown), 1)
+        self.assertTrue(r.timer.isActive())

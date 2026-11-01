@@ -19,14 +19,15 @@ jobs:
         run: |
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git ca-certificates \
-            python3 python3-pyqt6 python3-cryptography python3-keyring flake8 libegl1
+            python3 python3-pyqt6 python3-cryptography python3-keyring flake8 libegl1 dbus
       - uses: actions/checkout@v4
       - name: Lint
         run: flake8 activitytrack_desktop tests
       - name: Tests
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python3 -m unittest discover -s tests -t . -v
+        # a session bus for the notifications' test
+        run: dbus-run-session -- python3 -m unittest discover -s tests -t . -v
 
   windows:
     # the libraries the installer bundles (requirements-windows.txt)

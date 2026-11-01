@@ -91,7 +91,11 @@ def main(argv=None):
     # a command here goes out in a few seconds; what the sync brought shows at once
     actions.changed.connect(service.changed_here)
     service.changed.connect(lambda *_a: (actions.refresh_policy(), actions.changed_elsewhere()))
-    window = MainWindow(session, service, actions)
+    from .notify import Notifier
+    from .reminder_ui import Reminders
+
+    notifier = Notifier()
+    window = MainWindow(session, service, actions, notifier)
 
     def quit_app():
         window.quitting = True
@@ -110,6 +114,8 @@ def main(argv=None):
     if QSystemTrayIcon.isSystemTrayAvailable():
         tray = Tray(session, service, window, quit_app, actions)
         tray.show()
+        # without the notification service the tray's messages bring the reminders
+        notifier.attach_tray(tray)
     else:
         tray = None
         QMessageBox.information(None, "ActivityTrack", _(
@@ -117,6 +123,8 @@ def main(argv=None):
         window.closeEvent = lambda e: (e.accept(), quit_app() if not window.quitting else None)
     if not args.hidden or tray is None or session.account is None:
         window.show_up()
+    reminders = Reminders(actions, notifier, window.show_up)
+    reminders.arm()
     service.start()
     return app.exec()
 

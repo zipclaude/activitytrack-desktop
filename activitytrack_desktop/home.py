@@ -153,7 +153,10 @@ class Actions(QObject):
         self._do(self.todos.reopen, uid)
 
     def todo_postpone(self, uid):
-        self._do(self.todos.postpone, uid)
+        """Later by the user's snooze (Promemoria), within the policy."""
+        from .reminder_ui import local_intervals
+        from .reminders import config_of
+        self._do(self.todos.postpone, uid, config_of(self.work.policy, local_intervals())["planSnoozeMin"])
 
     def reopen_entry(self, uid):
         self._do(self.work.command, uid, REOPEN)
