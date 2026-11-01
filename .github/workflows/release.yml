@@ -116,7 +116,7 @@ jobs:
         run: |
           pyinstaller --noconfirm --clean --windowed --name ActivityTrack `
             --icon packaging/windows/activitytrack-desktop.ico `
-            --paths . --collect-submodules keyring.backends --collect-data tzdata `
+            --paths . --collect-submodules keyring.backends --collect-data tzdata --collect-data activitytrack_desktop `
             packaging/windows/launcher.py
       - name: Try the bundle
         run: |
