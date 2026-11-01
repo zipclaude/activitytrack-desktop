@@ -9,8 +9,10 @@ from PyQt6.QtCore import QObject, QSettings, QTimer, QUrl, pyqtSignal as Signal
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import QCheckBox, QGroupBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
-from . import __version__, autostart, updates
-from .i18n import _
+from activitytrack import updates
+from activitytrack.i18n import _
+
+from . import __version__, autostart
 
 CHECK_EVERY_MS = 3600_000
 

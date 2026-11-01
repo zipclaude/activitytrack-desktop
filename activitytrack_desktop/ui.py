@@ -2,7 +2,6 @@
 """The tray icon, the window and the pairing dialog (docs/DESIGN.md §6)."""
 
 import threading
-from datetime import datetime
 
 from PyQt6.QtCore import QObject, Qt, QTimer, pyqtSignal as Signal
 from PyQt6.QtGui import QGuiApplication, QIcon
@@ -11,52 +10,10 @@ from PyQt6.QtWidgets import (
     QPushButton, QSystemTrayIcon, QTabWidget, QVBoxLayout, QWidget,
 )
 
-from . import __version__, icons, pairing, wire
-from .i18n import _
+from activitytrack import pairing, texts
+from activitytrack.i18n import _
 
-PAIR_ERRORS = {
-    pairing.NOT_A_LINK: _("Non è un collegamento di associazione: copialo dalla pagina «Dispositivi» del web."),
-    pairing.VERSION: _("Collegamento di una versione che questa app non conosce: aggiorna ActivityTrack Desktop."),
-    pairing.NOT_HTTPS: _("Il server deve usare HTTPS."),
-    pairing.BAD_PIN: _("Il collegamento è incompleto: copialo di nuovo."),
-    pairing.INVALID_CODE: _("Codice scaduto o già usato: creane un altro dalla pagina web."),
-    pairing.USER_DISABLED: _("Il tuo utente non può sincronizzare: chiedi all'amministratore."),
-    pairing.NETWORK: _("Server non raggiungibile: controlla la rete e l'indirizzo."),
-    pairing.CERTIFICATE: _("Il certificato del server non è valido o non corrisponde al collegamento."),
-    pairing.SERVER: _("Il server ha risposto con un errore."),
-    pairing.APP_TOO_OLD: _("Il server non accetta questa versione: aggiorna ActivityTrack Desktop."),
-    pairing.SERVER_TOO_OLD: _("Questa versione è più recente del server: va aggiornato il server."),
-}
-
-
-def state_text(session, state, detail):
-    """What the sync says, for the window, the tooltip and the menu."""
-    store = session.store
-    if session.account is None:
-        return _("Non associato: associa questo PC a un server ActivityTrack Web.")
-    if store.get_state("revoked"):
-        return _("Il server ha revocato l'associazione di questo PC. I dati restano qui: "
-                 "per sincronizzare di nuovo associalo dalla pagina «Dispositivi» del web.")
-    code = store.get_state("incompatible")
-    if code == wire.SERVER_TOO_OLD:
-        return _("Questa versione è più recente del server ActivityTrack Web: va aggiornato il server "
-                 "(avvisa l'amministratore). I dati restano qui e si sincronizzano dopo l'aggiornamento.")
-    if code:
-        return _("Il server ActivityTrack Web non accetta più questa versione: aggiorna ActivityTrack Desktop. "
-                 "I dati restano qui e si sincronizzano dopo l'aggiornamento.")
-    if state == "offline":
-        return _("Server non raggiungibile: le modifiche partono appena torna la rete.")
-    if state == "failed":
-        return _("Sincronizzazione non riuscita: %s") % detail
-    last = store.get_state("last_sync")
-    if last:
-        return _("Sincronizzato alle %s") % datetime.fromtimestamp(last / 1000).strftime("%H:%M")
-    return _("In attesa della prima sincronizzazione…")
-
-
-def needs_attention(session, state):
-    return bool(session.account is None or session.store.get_state("revoked")
-                or session.store.get_state("incompatible") or state == "failed")
+from . import __version__, icons
 
 
 class _Pairing(QObject):
@@ -120,7 +77,7 @@ class PairDialog(QDialog):
 
     def _error(self, code):
         self.message.setStyleSheet("color: #c62828")
-        self.message.setText(PAIR_ERRORS.get(code, code))
+        self.message.setText(texts.pair_error(code))
         self.message.show()
 
 
@@ -175,7 +132,7 @@ class SyncPanel(QWidget):
             self.values["user"].setText(f"{a.name} ({a.username})" if a.name else a.username)
             self.values["org"].setText(a.org)
             self.values["pending"].setText(str(store.db.execute("SELECT count(*) FROM pending").fetchone()[0]))
-        self.status.setText(state_text(self.session, self.service.state, self.service.detail))
+        self.status.setText(texts.sync_state(self.session, self.service.state, self.service.detail))
         errors = store.errors()
         self.errors.setText(_("Non sincronizzati:") + "\n" + "\n".join(
             f"· {e['type']} {e['uid'][:8]}: {e['error']} {e['detail']}" for e in errors) if errors else "")
@@ -285,7 +242,7 @@ class Tray(QSystemTrayIcon):
 
     def _pause_or_resume(self):
         """Middle click: pause the activity at work, or resume the one paused."""
-        from .work import ACTIVE, PAUSE, WORK
+        from activitytrack.work import ACTIVE, PAUSE, WORK
         running = [e for e in self.actions.work.running() if e.get("status") == ACTIVE]
         if len(running) == 1:
             e = running[0]
@@ -296,11 +253,11 @@ class Tray(QSystemTrayIcon):
 
     def refresh(self):
         from .home import commands
-        from .texts import hm, state_label
-        from .work import ACTIVE
+        from activitytrack.texts import hm, state_label
+        from activitytrack.work import ACTIVE
 
-        sync_text = state_text(self.session, self.service.state, self.service.detail)
-        alert = needs_attention(self.session, self.service.state)
+        sync_text = texts.sync_state(self.session, self.service.state, self.service.detail)
+        alert = texts.sync_needs_attention(self.session, self.service.state)
         running = self._running()
         first = running[0] if running else None
         state = icons.IDLE

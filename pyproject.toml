@@ -10,7 +10,8 @@ readme = "README.md"
 license = "GPL-3.0-or-later"
 requires-python = ">=3.11"
 # on Linux from the distribution (python3-pyqt6, python3-cryptography, python3-keyring)
-dependencies = ["PyQt6>=6.6", "cryptography>=38", "keyring>=23", "tzdata; sys_platform == 'win32'"]
+# the library (python3-activitytrack) brings cryptography, keyring and, on Windows, tzdata
+dependencies = ["activitytrack>=0.9.4b2", "PyQt6>=6.6"]
 
 [project.scripts]
 activitytrack-desktop = "activitytrack_desktop.main:main"

@@ -66,11 +66,11 @@ def main():
     from activitytrack_desktop import forms
     from activitytrack_desktop.home import Actions
     from activitytrack_desktop.notify import Notifier
-    from activitytrack_desktop.pairing import Account
+    from activitytrack.pairing import Account
     from activitytrack_desktop.service import SyncService
-    from activitytrack_desktop.session import Session
+    from activitytrack.session import Session
     from activitytrack_desktop.ui import MainWindow, PairDialog
-    from activitytrack_desktop.work import PAUSE, StartRequest
+    from activitytrack.work import PAUSE, StartRequest
 
     OUT.mkdir(parents=True, exist_ok=True)
     folder = tempfile.mkdtemp()

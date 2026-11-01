@@ -11,15 +11,16 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from . import forms
-from .i18n import _
-from .policy import stored
-from . import texts
-from .texts import KINDS, clock, error_text, hm, state_label
-from .todos import DEFAULT_SHOW, SHOWS, WINDOWS, Todos
-from .work import (
+from activitytrack import texts
+from activitytrack.i18n import _
+from activitytrack.policy import stored
+from activitytrack.texts import KINDS, clock, error_text, hm, state_label
+from activitytrack.todos import DEFAULT_SHOW, SHOWS, WINDOWS, Todos
+from activitytrack.work import (
     ACTIVE, PAUSE, REOPEN, STOP, SUSPEND, SUSPENDED, TO_COMPLETE, TRAVEL, WORK, Work, WorkError,
 )
+
+from . import forms
 
 # the app's colours of the modes
 COLOURS = {WORK: "#2e7d32", PAUSE: "#f9a825", TRAVEL: "#1565c0", SUSPENDED: "#ef6c00", TO_COMPLETE: "#c62828"}
@@ -155,7 +156,7 @@ class Actions(QObject):
     def todo_postpone(self, uid):
         """Later by the user's snooze (Promemoria), within the policy."""
         from .reminder_ui import local_intervals
-        from .reminders import config_of
+        from activitytrack.reminders import config_of
         self._do(self.todos.postpone, uid, config_of(self.work.policy, local_intervals())["planSnoozeMin"])
 
     def reopen_entry(self, uid):

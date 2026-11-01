@@ -17,7 +17,8 @@ and XFCE, on Wayland and X11.
 
 From the [releases](https://github.com/zipclaude/activitytrack-desktop/releases):
 
-- **Debian 13 / 14, Ubuntu 24.04 / 26.04**: `sudo apt install ./activitytrack-desktop_<version>-<distro>_all.deb`,
+- **Debian 13 / 14, Ubuntu 24.04 / 26.04**: `sudo apt install ./python3-activitytrack_<version>-<distro>_all.deb ./activitytrack-desktop_<version>-<distro>_all.deb`
+  (the library from its own release),
   then start *ActivityTrack* from the menu.
 - **Other distributions**: install Python 3.11 or newer, PyQt6, cryptography and keyring
   from the distribution, unpack `activitytrack-desktop-<version>.tar.gz` and run
@@ -31,8 +32,14 @@ The desktop needs a notification area: native on KDE Plasma; on XFCE the panel's
 
 ## Development
 
+The rules, the local copy and the sync are in the library
+[python3-activitytrack](https://github.com/zipclaude/python3-activitytrack), shared with the
+command line and the text interface (one application, one data folder, one pairing).
+
 ```sh
 apt install python3-pyqt6 python3-cryptography python3-keyring flake8
+git clone https://github.com/zipclaude/python3-activitytrack ../python3-activitytrack
+export PYTHONPATH=$PWD/../python3-activitytrack
 python3 -m activitytrack_desktop --dev     # --dev: http:// servers allowed (a local ActivityTrack Web)
 QT_QPA_PLATFORM=offscreen python3 -m unittest discover -s tests -t .
 flake8 activitytrack_desktop tests

@@ -7,7 +7,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from activitytrack_desktop import autostart, updates
+from activitytrack import updates
+from activitytrack_desktop import autostart
 
 RELEASES = json.dumps([
     {"tag_name": "v0.9.4-beta1", "prerelease": True, "html_url": "https://x/b1"},
