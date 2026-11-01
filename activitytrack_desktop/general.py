@@ -82,9 +82,9 @@ class Updates(QObject):
         s = QSettings()
         if release is not None and s.value("updates/notified", "") != release.version:
             s.setValue("updates/notified", release.version)
-            kind = _("beta") if release.beta else _("versione")
+            body = _("Nuova versione beta su GitHub.") if release.beta else _("Nuova versione su GitHub.")
             self.notifier.show(f"update|{release.version}", _("ActivityTrack %s disponibile") % release.version,
-                               _("Nuova %s su GitHub.") % kind, [("open", _("Scarica"))], persistent=False)
+                               body, [("open", _("Scarica"))], persistent=False)
 
     def _answer(self, key, action):
         if key.startswith("update|") and self.latest is not None:
