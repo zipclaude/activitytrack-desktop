@@ -84,22 +84,22 @@ def clock(ms):
 
 
 def todo_when(t, tz):
-    """When a to-do is planned or due, as the app's rows: "lun 02/11 15:00–15:30", "scad. 05/11"."""
+    """When a to-do is planned or due, as the app's rows: "lun 02/11 15:00–15:30", "scad. gio 05/11"."""
     from .todos import plan_bounds, _day
-    days = ("lun", "mar", "mer", "gio", "ven", "sab", "dom")
+    days = (_("lun"), _("mar"), _("mer"), _("gio"), _("ven"), _("sab"), _("dom"))
     plan = plan_bounds(t, tz)
     today = datetime.now(tz).date()
     if plan:
         start, end, all_day = plan
         d = start.date()
-        day = "" if d == today else f"{days[d.weekday()]} {d.strftime('%d/%m')} "
+        day = "" if d == today else f"{days[d.weekday()]} {d.strftime('%d/%m')}"
         if all_day:
-            return (day or _("oggi ")).strip()
+            return day or _("oggi")
         span = start.strftime("%H:%M") + (("–" + end.strftime("%H:%M")) if end > start else "")
-        return day + span
+        return f"{day} {span}".strip()
     due = _day(t.get("dueDate"))
     if due:
-        text = _("scad. ") + f"{days[due.weekday()]} {due.strftime('%d/%m')}"
+        text = _("scad. %s") % f"{days[due.weekday()]} {due.strftime('%d/%m')}"
         if t.get("dueTimeMin") is not None:
             text += f" {t['dueTimeMin'] // 60:02d}:{t['dueTimeMin'] % 60:02d}"
         return text

@@ -12,7 +12,7 @@ from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 from PyQt6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
 from . import __version__
-from .i18n import _
+from .i18n import _, set_language
 
 APP_ID = "activitytrack-desktop"
 
@@ -49,6 +49,21 @@ def _log_errors(folder):
     sys.excepthook = hook
 
 
+def _language(app, forced=None):
+    """
+    The interface's language (the policy's, else the system's), set before
+    the interface's modules are imported; Qt's own texts (Annulla, Sì…) and
+    the dates follow it.
+    """
+    lang = set_language(forced or QLocale.system().name())
+    locale = QLocale(lang) if lang != QLocale.system().name()[:2] else QLocale.system()
+    QLocale.setDefault(locale)
+    qt_texts = QTranslator(app)
+    if qt_texts.load(locale, "qtbase", "_", QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)):
+        app.installTranslator(qt_texts)
+    return lang
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog=APP_ID)
     parser.add_argument("--version", action="version", version=f"ActivityTrack Desktop {__version__}")
@@ -63,10 +78,6 @@ def main(argv=None):
     app.setApplicationVersion(__version__)
     app.setDesktopFileName(APP_ID)
     app.setQuitOnLastWindowClosed(False)
-    # Qt's own texts (Annulla, Sì…) in the system's language
-    qt_texts = QTranslator(app)
-    if qt_texts.load(QLocale(), "qtbase", "_", QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)):
-        app.installTranslator(qt_texts)
 
     folder = Path(args.data) if args.data else Path(
         QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation))
@@ -80,12 +91,16 @@ def main(argv=None):
     server = QLocalServer()
     server.listen(name)
 
-    from .service import SyncService
+    from .policy import stored
     from .session import Session
+
+    session = Session(folder, allow_http=args.dev)
+    _language(app, stored(session.store).language)
+
+    from .service import SyncService
     from .home import Actions
     from .ui import MainWindow, Tray
 
-    session = Session(folder, allow_http=args.dev)
     service = SyncService(session)
     actions = Actions(session)
     # a command here goes out in a few seconds; what the sync brought shows at once

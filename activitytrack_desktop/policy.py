@@ -85,6 +85,12 @@ class Policy:
         return self._section("entries").get("source") == "todosOnly"
 
     @property
+    def language(self):
+        """The interface's language the policy forces (ui.language), or None."""
+        value = self._section("ui").get("language")
+        return value if value in ("it", "en", "de", "es") else None
+
+    @property
     def master_free(self):
         """New companies, clients and roles may be typed (`masterData.source: user`)."""
         return self._section("masterData").get("source", "user") == "user"

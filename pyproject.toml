@@ -18,5 +18,8 @@ activitytrack-desktop = "activitytrack_desktop.main:main"
 [tool.setuptools]
 packages = ["activitytrack_desktop"]
 
+[tool.setuptools.package-data]
+activitytrack_desktop = ["locale/*.json"]
+
 [tool.setuptools.dynamic]
 version = { attr = "activitytrack_desktop.__version__" }
