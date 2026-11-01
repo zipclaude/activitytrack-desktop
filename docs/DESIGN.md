@@ -74,7 +74,7 @@ Targets: KDE Plasma and XFCE, on Wayland and X11; Windows 10 and 11 (§3.1).
 - **Data**: `%APPDATA%\ActivityTrack Desktop\` (Qt's `AppDataLocation`).
 - **Certificates**: Python's `ssl` reads the Windows trust store; the pin
   works as on Linux.
-- No distribution packages there: the release bundles Python, PySide6 and
+- No distribution packages there: the release bundles Python, PyQt6 and
   the libraries (§8).
 
 ## 4. Technology
