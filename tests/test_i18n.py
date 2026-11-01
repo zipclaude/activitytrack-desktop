@@ -7,8 +7,11 @@ from activitytrack_desktop import i18n
 from activitytrack_desktop.policy import Policy
 
 
+SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "strings.py"
+
+
 def _strings_module():
-    path = Path(__file__).resolve().parent.parent / "scripts" / "strings.py"
+    path = SCRIPT
     spec = importlib.util.spec_from_file_location("strings", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -19,6 +22,8 @@ class I18nTest(unittest.TestCase):
     def tearDown(self):
         i18n.set_language("it")
 
+    # a check of the sources: the packages' job runs the tests on the installed code, without them
+    @unittest.skipUnless(SCRIPT.exists(), "not in a source tree")
     def test_every_text_is_translated(self):
         self.assertEqual(_strings_module().check(), [])
 
