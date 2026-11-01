@@ -10,7 +10,7 @@ ways; without a network it keeps working and syncs when the network is
 back. Reports, master data and the management systems stay on the phone
 and the web.
 
-Status: under development, phase 3 of [docs/DESIGN.md](docs/DESIGN.md) (to-dos). Linux first: KDE Plasma
+Status: under development, phase 4 of [docs/DESIGN.md](docs/DESIGN.md) (reminders). Linux first: KDE Plasma
 and XFCE, on Wayland and X11.
 
 ## Install

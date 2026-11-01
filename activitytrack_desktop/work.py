@@ -464,3 +464,17 @@ class Work:
             raise WorkError("illegal", "running segment")
         self.store.delete("segment", seg_uid, self.clock())
         self._review(seg["entryUid"])
+
+    # ---- answers to reminders ----
+
+    @atomic
+    def go_on(self, uid):
+        """"No, continua" at the planned end: the end is forgotten, on every device."""
+        self.entry(uid)
+        self._touch(uid, {"plannedEndUtcMs": None})
+
+    @atomic
+    def absent_all_day(self, day):
+        """An absence for the whole [day] (a date), from the day-start reminder."""
+        now = self.clock()
+        self.store.write("absence", new_uid(), {"date": day.isoformat(), "kind": "FULL_DAY", "timeMin": None}, now)

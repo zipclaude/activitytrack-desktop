@@ -202,7 +202,7 @@ class SyncPanel(QWidget):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, session, service, actions=None):
+    def __init__(self, session, service, actions=None, notifier=None):
         super().__init__()
         self.setWindowTitle("ActivityTrack")
         # the installed icon (the app's), else the drawn one
@@ -214,6 +214,12 @@ class MainWindow(QMainWindow):
             from .home import Home
             self.home = Home(actions)
             self.tabs.addTab(self.home, _("Attività"))
+        self.reminders_tab = None
+        if actions is not None and notifier is not None:
+            from .reminder_ui import ReminderSettings
+            self.reminders_tab = ReminderSettings(actions, notifier)
+            self.tabs.addTab(self.reminders_tab, _("Promemoria"))
+            actions.redraw.connect(self.reminders_tab.refresh)
         self.tabs.addTab(self.panel, _("Sincronizzazione"))
         self.setCentralWidget(self.tabs)
         self.resize(640, 560)
