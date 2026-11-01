@@ -5,7 +5,7 @@ click away, so that a short activity goes in from the keyboard instead of
 the phone. It works with ActivityTrack Web (a prerequisite) as one more
 synced device, like a phone.
 
-Status: proposal, 2026-10-31. Linux first.
+Status: proposal, 2026-10-31. Linux first; Windows before the release.
 
 ## 1. Scope
 
@@ -36,10 +36,11 @@ systems, attachments upload (first versions), absences, calendar export.
 | D5 | Packages: `.deb` and `.tar.gz`; others later. |
 | D6 | Version aligned with app and web. |
 | D7 | Global shortcut: later, once the rest is stable. |
+| D8 | Windows too, before the release (2026-11-01). |
 
 ## 3. Desktop environments
 
-Target: KDE Plasma and XFCE, on Wayland and X11.
+Targets: KDE Plasma and XFCE, on Wayland and X11; Windows 10 and 11 (§3.1).
 
 - **Tray**: StatusNotifierItem over D-Bus (what Qt's `QSystemTrayIcon`
   uses when a `StatusNotifierWatcher` is present), XEmbed fallback on X11.
@@ -57,7 +58,24 @@ Target: KDE Plasma and XFCE, on Wayland and X11.
 - **Autostart**: an XDG autostart `.desktop` entry, switchable in the
   settings.
 - **Single instance**: a second launch raises the window of the first
-  (D-Bus name `it.infraconsulting.ActivityTrack`).
+  (`QLocalServer`, a local socket on Linux and a named pipe on Windows).
+- **Sleep**: a wall-clock jump between two ticks of the 30 s timer means
+  the PC slept: sync at once, and the reminders are planned again. The
+  same on both systems; no logind or Windows power events needed.
+
+### 3.1 Windows
+
+- **Tray**: the notification area, native in Qt.
+- **Notifications**: Qt's tray messages become Windows toasts, without
+  buttons: a click opens the window on the question ("Stai ancora
+  lavorando…?"). Toasts with buttons (WinRT) may come later.
+- **Secrets**: `keyring` uses the Credential Manager.
+- **Autostart**: `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
+- **Data**: `%APPDATA%\ActivityTrack Desktop\` (Qt's `AppDataLocation`).
+- **Certificates**: Python's `ssl` reads the Windows trust store; the pin
+  works as on Linux.
+- No distribution packages there: the release bundles Python, PySide6 and
+  the libraries (§8).
 
 ## 4. Technology
 
@@ -71,8 +89,8 @@ Why:
 - The same language as the server: `web/ops.py` (the commands) and
   `web/homelist.py` (the Home list) are already Python ports of the app's
   rules.
-- Qt also runs on Windows and macOS, should they come.
-- Debian packages, as for the web server: no bundled runtime.
+- The same code runs on Windows (D8), and on macOS should it come.
+- On Linux, Debian packages as for the web server: no bundled runtime.
 
 Alternative considered: **Kotlin/JVM** reusing the app's `core:domain`
 (pure Kotlin: policy parser and signature, reminder planner, start
@@ -126,7 +144,7 @@ The phone's protocol (`SYNC.md` §5, §12), with the headers
   the web and the phone's next sync);
 - `sync/head` every 30 s while online, a pull when `rev` moved;
 - on network return (Qt's `QNetworkInformation`) and on resume from
-  suspend (logind `PrepareForSleep`);
+  sleep (§3);
 - 401: "associazione revocata"; 426: the update message, data kept.
 
 ### 5.3 Rules shared with the phone
@@ -218,6 +236,15 @@ from the other at the next sync, where the answer is a synced change
   AppStream metadata.
 - Data: `~/.local/share/activitytrack-desktop/` (SQLite), settings in
   `~/.config/activitytrack-desktop/`.
+- **Windows**: a per-user installer `ActivityTrackDesktop-X.Y.Z-setup.exe`
+  (no administrator rights), made on the CI's Windows runner with
+  PyInstaller (one folder: Python, PySide6, cryptography, keyring) and
+  Inno Setup; Start menu entry, autostart option, uninstaller. The
+  bundled libraries are pinned in `requirements-windows.txt`, with the
+  same PySide6 minor as Debian 13 where possible.
+- **Signing on Windows**: without a code-signing certificate SmartScreen
+  warns at the first run ("Esegui comunque"). A certificate costs a yearly
+  fee: to decide before the release.
 - A user manual chapter (it/en) and screenshots; the server's admin manual
   says the desktop exists.
 
@@ -226,13 +253,15 @@ from the other at the next sync, where the answer is a synced change
 - `Device.kind` (`phone` | `desktop`), sent by `pair` (`kind`, default
   `phone`); "Telefoni" becomes "Dispositivi" in menu, pages and manual.
 - A desktop cannot be the plugin holder ("Invia ai gestionali" hidden).
-- The policy editor's "too old" warning counts the desktops' version too.
+- The policy editor's "too old" warning counts phones only: the desktop
+  ignores the keys it does not use (§5.3).
 - `docs/SYNC.md`: the desktop as a node; nothing else changes on the wire
   (schema 1).
 
 ## 10. Phases
 
-1. **Skeleton**: repository, packaging, CI (flake8, tests, `.deb`/tar);
+1. **Skeleton**: repository, packaging, CI (flake8, tests on Debian and
+   on Windows, `.deb`/tar);
    tray icon, pairing by link, token in the keyring, store, sync engine
    (push/pull/head, 401, 426) with tests against a local server.
    Server: `Device.kind`, "Dispositivi".
@@ -242,10 +271,11 @@ from the other at the next sync, where the answer is a synced change
 4. **Reminders**: planner port with its tests, notifications with actions,
    per-reminder switches.
 5. **Finish**: settings, languages, update check, autostart, manual,
-   release 1.0 together with app and web (or a 0.9.x beta first).
+   the Windows installer (D8), release 1.0 together with app and web (or
+   a 0.9.x beta first).
 6. **Later**: global shortcut (D7), attachments, other packages.
 
 ## 11. Open points
 
 - PySide6 on Ubuntu 24.04 (§4).
-- Repository on GitHub: `zipclaude/activitytrack-desktop` (to create).
+- Code signing on Windows (§8).
