@@ -49,12 +49,46 @@ def _log_errors(folder):
     sys.excepthook = hook
 
 
+def _selftest(app, out):
+    import tempfile
+
+    from .home import Actions
+    from .notify import Notifier
+    from .reminder_ui import Reminders
+    from .service import SyncService
+    from .session import Session
+    from .ui import MainWindow, Tray
+
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            session = Session(d, use_keyring=False)
+            service = SyncService(session)
+            actions = Actions(session)
+            notifier = Notifier(use_dbus=False)
+            window = MainWindow(session, service, actions, notifier)
+            Tray(session, service, window, lambda: None, actions)
+            Reminders(actions, notifier, window.show_up).arm()
+            window.quitting = True
+            service.stop()
+            session.store.close()
+        text = f"ok {__version__} zone={actions.work.zone}\n"
+        code = 0
+    except Exception:
+        text = traceback.format_exc()
+        code = 1
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(text)
+    return code
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog=APP_ID)
     parser.add_argument("--version", action="version", version=f"ActivityTrack Desktop {__version__}")
     parser.add_argument("--hidden", action="store_true", help="start in the tray only (autostart)")
     parser.add_argument("--data", help="data folder (default: the user's application data)")
     parser.add_argument("--dev", action="store_true", help="development: allow http:// servers")
+    # the packages' check: everything built on an empty folder, the outcome in a file (no console on Windows)
+    parser.add_argument("--selftest", metavar="FILE", help=argparse.SUPPRESS)
     args, qt_args = parser.parse_known_args(argv if argv is not None else sys.argv[1:])
 
     app = QApplication([sys.argv[0], *qt_args])
@@ -67,6 +101,9 @@ def main(argv=None):
     qt_texts = QTranslator(app)
     if qt_texts.load(QLocale(), "qtbase", "_", QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)):
         app.installTranslator(qt_texts)
+
+    if args.selftest:
+        return _selftest(app, args.selftest)
 
     folder = Path(args.data) if args.data else Path(
         QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation))
@@ -123,6 +160,8 @@ def main(argv=None):
         window.closeEvent = lambda e: (e.accept(), quit_app() if not window.quitting else None)
     if not args.hidden or tray is None or session.account is None:
         window.show_up()
+    from .general import first_start
+    first_start()
     reminders = Reminders(actions, notifier, window.show_up)
     reminders.arm()
     service.start()

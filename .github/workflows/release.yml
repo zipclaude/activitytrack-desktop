@@ -1,15 +1,15 @@
 name: Release
 
-# A tag vX.Y.Z builds the Debian/Ubuntu packages and the tarball, tries them
-# and publishes the GitHub Release. Run by hand (workflow_dispatch) it does
-# everything but publishing. The Windows installer comes in phase 5
-# (docs/DESIGN.md §8).
+# A tag vX.Y.Z builds the Debian/Ubuntu packages, the tarball and the
+# Windows installer, tries them and publishes the GitHub Release. Run by
+# hand (workflow_dispatch) it does everything but publishing.
 on:
   push:
     tags: ["v*"]
   # pull requests that touch the packaging try the packages too
   pull_request:
-    paths: ["debian/**", "packaging/**", "docs/manual/**", "scripts/build-manual.sh", ".github/workflows/release.yml"]
+    paths: ["debian/**", "packaging/**", "requirements-*.txt", "docs/manual/**", "scripts/build-manual.sh",
+            ".github/workflows/release.yml"]
   workflow_dispatch:
 
 jobs:
@@ -90,6 +90,70 @@ jobs:
           name: tarball
           path: dist/*.tar.gz
 
+  windows:
+    # docs/DESIGN.md §8: PyInstaller (one folder) and Inno Setup, per user, not signed (D10)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Libraries and tools
+        run: python -m pip install -r requirements-windows.txt -r requirements-build-windows.txt
+      - name: Version
+        run: |
+          $V = (Select-String -Path activitytrack_desktop/__init__.py -Pattern '^__version__ = "(.*)"').Matches[0].Groups[1].Value
+          if ("$env:GITHUB_REF" -like "refs/tags/v*" -and "v$V" -ne "$env:GITHUB_REF_NAME") { throw "tag $env:GITHUB_REF_NAME, version $V" }
+          "AT_VERSION=$V" >> $env:GITHUB_ENV
+          "AT_NUMVERSION=$(($V -split '-')[0])" >> $env:GITHUB_ENV
+      - name: Tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m unittest discover -s tests -t .
+      - name: Bundle
+        run: |
+          pyinstaller --noconfirm --clean --windowed --name ActivityTrack `
+            --icon packaging/windows/activitytrack-desktop.ico `
+            --paths . --collect-submodules keyring.backends --collect-data tzdata --collect-data activitytrack_desktop `
+            packaging/windows/launcher.py
+      - name: Try the bundle
+        run: |
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $p = Start-Process dist/ActivityTrack/ActivityTrack.exe -ArgumentList "--selftest", "$pwd/selftest.txt" -Wait -PassThru
+          Get-Content selftest.txt
+          if ($p.ExitCode -ne 0) { throw "selftest: $($p.ExitCode)" }
+          if (-not (Select-String -Path selftest.txt -Pattern "^ok $env:AT_VERSION ")) { throw "selftest output" }
+      - name: Installer
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          & $iscc packaging/windows/activitytrack-desktop.iss
+          if ($LASTEXITCODE -ne 0) { throw "iscc $LASTEXITCODE" }
+          Get-ChildItem dist/*.exe
+      - name: Install, try, uninstall
+        run: |
+          $setup = (Get-ChildItem dist/ActivityTrackDesktop-*-setup.exe).FullName
+          Start-Process $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/TASKS=autostart" -Wait
+          $app = "$env:LOCALAPPDATA\Programs\ActivityTrack"
+          if (-not (Test-Path "$app\ActivityTrack.exe")) { throw "not installed in $app" }
+          $run = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name ActivityTrack
+          if ($run.ActivityTrack -notlike "*--hidden") { throw "autostart: $($run.ActivityTrack)" }
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $p = Start-Process "$app\ActivityTrack.exe" -ArgumentList "--selftest", "$pwd/installed.txt" -Wait -PassThru
+          Get-Content installed.txt
+          if ($p.ExitCode -ne 0) { throw "installed selftest: $($p.ExitCode)" }
+          Start-Process "$app\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES" -Wait
+          Start-Sleep -Seconds 3
+          if (Test-Path "$app\ActivityTrack.exe") { throw "still installed" }
+          if (Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name ActivityTrack -ErrorAction SilentlyContinue) { throw "autostart left" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/ActivityTrackDesktop-*-setup.exe
+
   # the user manual, it and en (docs/manual)
   manual:
     runs-on: ubuntu-latest
@@ -114,7 +178,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [deb, tarball, manual]
+    needs: [deb, tarball, windows, manual]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -143,6 +207,7 @@ jobs:
             echo
             echo "- Debian 13 / 14, Ubuntu 24.04 / 26.04: \`apt install ./activitytrack-desktop_${V}-<distro>_all.deb\` (deb13, deb14, ubuntu24.04, ubuntu26.04)"
             echo "- Other distributions: \`activitytrack-desktop-$V.tar.gz\`, see [README](https://github.com/${GITHUB_REPOSITORY}/blob/v$V/README.md)"
+            echo "- Windows 10 / 11: \`ActivityTrackDesktop-$V-setup.exe\`, installed for the current user. It is not signed: Windows SmartScreen warns at the first run (More info → Run anyway); check the file against SHA256SUMS."
             echo
             echo "Manual: \`ActivityTrack-Desktop-Manuale-$V.pdf\` (it), \`ActivityTrack-Desktop-Manual-$V.pdf\` (en)."
           } > notes.md

@@ -144,6 +144,9 @@ class Reminders(QObject):
 
     def answer(self, key, action):
         kind, _sep, uid = key.partition("|")
+        if kind not in R.KINDS:
+            # another notification (an update)
+            return
         if action == DEFAULT:
             if self.notifier.native:
                 self.show_window()
