@@ -94,7 +94,9 @@ def _selftest(app, out):
             window.quitting = True
             service.stop()
             session.store.close()
-        text = f"ok {__version__} zone={actions.work.zone}\n"
+        # the language and a text of the desktop's own catalogs: they are in the bundle
+        from activitytrack.i18n import language
+        text = f"ok {__version__} zone={actions.work.zone} lang={language()} quit={_('Esci')}\n"
         code = 0
     except Exception:
         text = traceback.format_exc()
