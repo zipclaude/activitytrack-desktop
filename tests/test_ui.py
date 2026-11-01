@@ -62,15 +62,56 @@ class UiTest(unittest.TestCase):
         self.assertTrue(p.unpair.isVisibleTo(p))
         self.assertIn("file leggibile solo dal tuo utente", p.secret.text())
 
+    def menu_texts(self, menu):
+        return [a.text() for a in menu.actions()]
+
     def test_the_tray(self):
+        from activitytrack_desktop.home import Actions
         from activitytrack_desktop.ui import MainWindow, Tray
-        w = MainWindow(self.session, self.service)
-        t = Tray(self.session, self.service, w, quit_app=lambda: None)
+        from activitytrack_desktop.work import StartRequest
+        actions = Actions(self.session)
+        w = MainWindow(self.session, self.service, actions)
+        t = Tray(self.session, self.service, w, quit_app=lambda: None, actions=actions)
         self.assertIn("Non associato", t.toolTip())
-        self.assertFalse(t.sync_now.isVisible())
+        self.assertNotIn("Sincronizza ora", self.menu_texts(t.contextMenu()))
         self.pair()
+        self.session.store.pulled({"type": "client", "uid": "c1", "rev": 1,
+                                   "fields": {"name": "Biblioteca", "archived": False}})
+        actions.work.start(StartRequest(client="c1", activity="Rete"))
         t.refresh()
-        self.assertTrue(t.sync_now.isVisible())
+        texts = self.menu_texts(t.contextMenu())
+        self.assertEqual(texts[0], "Biblioteca · Rete — In lavoro")
+        self.assertIn("Nuova attività…", texts)
+        self.assertIn("Sincronizza ora", texts)
+        sub = [a.text() for a in t.contextMenu().actions()[0].menu().actions()]
+        self.assertEqual(sub[:4], ["Pausa", "Viaggio", "Sospendi", "Stop"])
+        self.assertIn("Biblioteca · Rete — In lavoro", t.toolTip())
+        # middle click: pause, then back to work
+        t._pause_or_resume()
+        self.assertEqual(actions.work.running()[0]["mode"], "PAUSE")
+
+    def test_the_home_and_the_quick_entry(self):
+        from activitytrack_desktop import forms
+        from activitytrack_desktop.home import Actions, Card, Home
+        self.pair()
+        actions = Actions(self.session)
+        home = Home(actions)
+        d = forms.QuickEntry(actions.work)
+        d.description.setPlainText("Configurazione rete")
+        d.client.setEditText("Comune di Valdora")
+        d.tags.setText("urgente, rete")
+        d.confirm()
+        self.assertEqual(d.result(), 1)
+        e = self.session.store.get("entry", d.result_uid)
+        self.assertEqual((e["activity"], e["tags"]), ("Configurazione rete", ["urgente", "rete"]))
+        self.assertEqual(self.session.store.get("client", e["clientUid"])["name"], "Comune di Valdora")
+        home.refresh()
+        cards = home.scroll.widget().findChildren(Card)
+        self.assertEqual(len(cards), 1)
+        # a refused start says why and stays open
+        d = forms.QuickEntry(actions.work)
+        d.confirm()
+        self.assertIn("Serve il cliente", d.message.text())
 
     def test_closing_hides_quitting_closes(self):
         from activitytrack_desktop.ui import MainWindow

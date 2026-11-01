@@ -6,14 +6,18 @@ network comes back and after the PC slept. The network calls run in a
 worker thread; the interface hears the outcome through signals.
 """
 
+import json
 import time
 
 from PyQt6.QtCore import QObject, QThread, QTimer, pyqtSignal as Signal, pyqtSlot as Slot
 
 from .net import NetworkError
+from .policy import Policy
 from .sync import SyncEngine, SyncFailed, SyncIncompatible, SyncRevoked
 
 TICK_MS = 30_000
+# a policy change does not move the server's revision: asked again this often
+POLICY_EVERY_S = 300
 DEBOUNCE_MS = 3_000
 # a wall-clock jump this much larger than the tick means the PC slept
 SLEEP_GAP_S = 90
@@ -25,6 +29,7 @@ class _Worker(QObject):
     def __init__(self, session):
         super().__init__()
         self.session = session
+        self._policy_at = 0
 
     @Slot(bool)
     def run(self, full):
@@ -40,10 +45,12 @@ class _Worker(QObject):
                 head = engine.head()
                 if head.get("rev") == store.cursor:
                     store.set_state("incompatible", None)
-                    self.finished.emit("idle", "")
+                    changed = self._policy(http, store, force=False)
+                    self.finished.emit("ok" if changed else "idle", "")
                     return
             result = engine.sync()
             store.set_state("incompatible", None)
+            self._policy(http, store, force=True)
             self.finished.emit("ok", result.errors[0] if result.errors else "")
         except SyncRevoked:
             store.set_state("revoked", True)
@@ -58,6 +65,26 @@ class _Worker(QObject):
         finally:
             # the worker thread's connection: the next run may come after a long sleep
             store.close()
+
+    def _policy(self, http, store, force):
+        """The user's policy (server SYNC.md §8); True when it changed. A text that is no policy keeps the last."""
+        now = time.monotonic()
+        if not force and now - self._policy_at < POLICY_EVERY_S:
+            return False
+        self._policy_at = now
+        reply = http.send("GET", "policy")
+        if reply.status != 200:
+            return False
+        try:
+            text = json.loads(reply.body).get("policy")
+        except (ValueError, AttributeError):
+            return False
+        if text is not None and Policy.parse(text) is None:
+            return False
+        if text == store.get_state("policy"):
+            return False
+        store.set_state("policy", text)
+        return True
 
 
 class SyncService(QObject):

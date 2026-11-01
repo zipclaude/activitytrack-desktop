@@ -4,11 +4,11 @@
 import threading
 from datetime import datetime
 
-from PyQt6.QtCore import QObject, Qt, pyqtSignal as Signal
-from PyQt6.QtGui import QAction, QGuiApplication, QIcon
+from PyQt6.QtCore import QObject, Qt, QTimer, pyqtSignal as Signal
+from PyQt6.QtGui import QGuiApplication, QIcon
 from PyQt6.QtWidgets import (
     QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
-    QPushButton, QSystemTrayIcon, QVBoxLayout, QWidget,
+    QPushButton, QSystemTrayIcon, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from . import __version__, icons, pairing, wire
@@ -202,19 +202,30 @@ class SyncPanel(QWidget):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, session, service):
+    def __init__(self, session, service, actions=None):
         super().__init__()
         self.setWindowTitle("ActivityTrack")
         # the installed icon (the app's), else the drawn one
         self.setWindowIcon(QIcon.fromTheme("activitytrack-desktop", icons.icon()))
         self.panel = SyncPanel(session, service)
-        self.setCentralWidget(self.panel)
-        self.resize(560, 420)
+        self.tabs = QTabWidget()
+        self.home = None
+        if actions is not None:
+            from .home import Home
+            self.home = Home(actions)
+            self.tabs.addTab(self.home, _("Attività"))
+        self.tabs.addTab(self.panel, _("Sincronizzazione"))
+        self.setCentralWidget(self.tabs)
+        self.resize(640, 560)
         # set when the application really quits: Qt 6's quit() asks every window to close first
         self.quitting = False
 
     def show_up(self):
         self.panel.refresh()
+        if self.home is not None:
+            self.home.refresh()
+            if self.panel.session.account is None:
+                self.tabs.setCurrentWidget(self.panel)
         self.show()
         self.raise_()
         self.activateWindow()
@@ -229,21 +240,25 @@ class MainWindow(QMainWindow):
 
 
 class Tray(QSystemTrayIcon):
-    def __init__(self, session, service, window, quit_app):
+    """The icon shows the running activity; the menu has its commands and a new activity."""
+
+    # running activities with their commands in the menu
+    MENU_ENTRIES = 5
+
+    def __init__(self, session, service, window, quit_app, actions=None):
         super().__init__(icons.icon())
-        self.session, self.service, self.window = session, service, window
-        menu = QMenu()
-        self.status = QAction(enabled=False)
-        menu.addAction(self.status)
-        menu.addSeparator()
-        menu.addAction(_("Apri ActivityTrack"), window.show_up)
-        self.sync_now = menu.addAction(_("Sincronizza ora"), lambda: service.sync(full=True))
-        menu.addSeparator()
-        menu.addAction(_("Esci"), quit_app)
-        self.setContextMenu(menu)
-        self._menu = menu
+        self.session, self.service, self.window, self.actions = session, service, window, actions
+        self.quit_app = quit_app
+        self._menu = QMenu()
+        self.setContextMenu(self._menu)
         self.activated.connect(self._activated)
         service.changed.connect(lambda *_a: self.refresh())
+        if actions is not None:
+            actions.changed.connect(self.refresh)
+            actions.redraw.connect(self.refresh)
+        # the elapsed time in the tooltip
+        self._tick = QTimer(self, interval=60_000, timeout=self.refresh)
+        self._tick.start()
         self.refresh()
 
     def _activated(self, reason):
@@ -252,11 +267,61 @@ class Tray(QSystemTrayIcon):
                 self.window.hide()
             else:
                 self.window.show_up()
+        elif reason == QSystemTrayIcon.ActivationReason.MiddleClick and self.actions is not None:
+            self._pause_or_resume()
+
+    def _pause_or_resume(self):
+        """Middle click: pause the activity at work, or resume the one paused."""
+        from .work import ACTIVE, PAUSE, WORK
+        running = [e for e in self.actions.work.running() if e.get("status") == ACTIVE]
+        if len(running) == 1:
+            e = running[0]
+            self.actions.command(e["uid"], WORK if e.get("mode") == PAUSE else PAUSE)
+
+    def _running(self):
+        return self.actions.work.running() if self.actions is not None and self.session.account else []
 
     def refresh(self):
-        text = state_text(self.session, self.service.state, self.service.detail)
+        from .home import commands
+        from .texts import hm, state_label
+        from .work import ACTIVE
+
+        sync_text = state_text(self.session, self.service.state, self.service.detail)
         alert = needs_attention(self.session, self.service.state)
-        self.setIcon(icons.icon(icons.IDLE, alert))
-        self.setToolTip("ActivityTrack\n" + text)
-        self.status.setText(text if len(text) < 70 else text[:67] + "…")
-        self.sync_now.setVisible(self.session.account is not None)
+        running = self._running()
+        first = running[0] if running else None
+        state = icons.IDLE
+        if first is not None and first.get("status") == ACTIVE:
+            modes = {"WORK": icons.WORK, "PAUSE": icons.PAUSE, "TRAVEL": icons.TRAVEL}
+            state = modes.get(first.get("mode"), icons.IDLE)
+        self.setIcon(icons.icon(state, alert))
+        lines = ["ActivityTrack"]
+        work = self.actions.work if self.actions is not None else None
+        for e in running[:3]:
+            t = work.totals(e["uid"])
+            lines.append(f"{work.label(e)} — {state_label(e)} ({hm(t['WORK'])})")
+        if self.session.account is not None and not running:
+            lines.append(_("Nessuna attività in corso"))
+        if alert or not running:
+            lines.append(sync_text)
+        self.setToolTip("\n".join(lines))
+
+        m = self._menu
+        m.clear()
+        for e in running[:self.MENU_ENTRIES]:
+            sub = m.addMenu(f"{work.label(e)} — {state_label(e)}")
+            for text, cmd in commands(e, work.policy):
+                sub.addAction(text, lambda u=e["uid"], c=cmd: self.actions.command(u, c))
+            sub.addSeparator()
+            sub.addAction(_("Modifica…"), lambda u=e["uid"]: self.actions.edit(u))
+        if self.actions is not None and self.session.account is not None:
+            new = m.addAction(_("Nuova attività…"), lambda: self.actions.new_entry())
+            new.setEnabled(work.policy.feature("entries"))
+            m.addSeparator()
+        status = m.addAction(sync_text if len(sync_text) < 70 else sync_text[:67] + "…")
+        status.setEnabled(False)
+        m.addAction(_("Apri ActivityTrack"), self.window.show_up)
+        if self.session.account is not None:
+            m.addAction(_("Sincronizza ora"), lambda: self.service.sync(full=True))
+        m.addSeparator()
+        m.addAction(_("Esci"), self.quit_app)
