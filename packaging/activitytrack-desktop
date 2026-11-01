@@ -4,6 +4,8 @@
 import sys
 
 sys.path.insert(0, "/usr/share/activitytrack-desktop")
+# /usr/share is the package's: no bytecode written there (prerm removes any)
+sys.dont_write_bytecode = True
 
 from activitytrack_desktop.main import main  # noqa: E402
 
