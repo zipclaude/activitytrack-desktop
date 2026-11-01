@@ -8,7 +8,8 @@ on:
     tags: ["v*"]
   # pull requests that touch the packaging try the packages too
   pull_request:
-    paths: ["debian/**", "packaging/**", "requirements-*.txt", ".github/workflows/release.yml"]
+    paths: ["debian/**", "packaging/**", "requirements-*.txt", "docs/manual/**", "scripts/build-manual.sh",
+            ".github/workflows/release.yml"]
   workflow_dispatch:
 
 jobs:
@@ -153,9 +154,31 @@ jobs:
           name: windows
           path: dist/ActivityTrackDesktop-*-setup.exe
 
+  # the user manual, it and en (docs/manual)
+  manual:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Manual
+        run: |
+          # a release's manual carries its version
+          V=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' activitytrack_desktop/__init__.py)
+          case "$GITHUB_REF" in refs/tags/v*)
+            for f in docs/manual/it/desktop.md docs/manual/en/desktop.md; do
+              head -1 "$f" | grep -q "^Versione $V \|^Version $V " || { echo "$f does not say version $V"; exit 1; }
+            done ;;
+          esac
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends pandoc
+          scripts/build-manual.sh
+          mkdir dist && cp build/manual/*.pdf dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: manual
+          path: dist/*.pdf
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [deb, tarball, windows]
+    needs: [deb, tarball, windows, manual]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -185,6 +208,8 @@ jobs:
             echo "- Debian 13 / 14, Ubuntu 24.04 / 26.04: \`apt install ./activitytrack-desktop_${V}-<distro>_all.deb\` (deb13, deb14, ubuntu24.04, ubuntu26.04)"
             echo "- Other distributions: \`activitytrack-desktop-$V.tar.gz\`, see [README](https://github.com/${GITHUB_REPOSITORY}/blob/v$V/README.md)"
             echo "- Windows 10 / 11: \`ActivityTrackDesktop-$V-setup.exe\`, installed for the current user. It is not signed: Windows SmartScreen warns at the first run (More info → Run anyway); check the file against SHA256SUMS."
+            echo
+            echo "Manual: \`ActivityTrack-Desktop-Manuale-$V.pdf\` (it), \`ActivityTrack-Desktop-Manual-$V.pdf\` (en)."
           } > notes.md
           # a tag with a suffix (v1.1.0-beta.1) is a beta: a pre-release
           case "$V" in *-*) pre=--prerelease ;; *) pre= ;; esac
