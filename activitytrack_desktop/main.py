@@ -82,11 +82,16 @@ def main(argv=None):
 
     from .service import SyncService
     from .session import Session
+    from .home import Actions
     from .ui import MainWindow, Tray
 
     session = Session(folder, allow_http=args.dev)
     service = SyncService(session)
-    window = MainWindow(session, service)
+    actions = Actions(session)
+    # a command here goes out in a few seconds; what the sync brought shows at once
+    actions.changed.connect(service.changed_here)
+    service.changed.connect(lambda *_a: (actions.refresh_policy(), actions.changed_elsewhere()))
+    window = MainWindow(session, service, actions)
 
     def quit_app():
         window.quitting = True
@@ -103,7 +108,7 @@ def main(argv=None):
     server.newConnection.connect(on_connection)
 
     if QSystemTrayIcon.isSystemTrayAvailable():
-        tray = Tray(session, service, window, quit_app)
+        tray = Tray(session, service, window, quit_app, actions)
         tray.show()
     else:
         tray = None
