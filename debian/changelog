@@ -1,3 +1,15 @@
+activitytrack-desktop (0.9.4~beta1) unstable; urgency=medium
+
+  * Reminders of the phone, as desktop notifications with their buttons:
+    still working, still on pause, no activity at day start, a planned
+    to-do coming, the planned end; each one can be switched off.
+  * Windows: a per-user installer (not signed).
+  * Generale: start at sign-in, daily check of newer releases on GitHub.
+  * The interface in English, German and Spanish too.
+  * User manual, it and en.
+
+ -- ActivityTrack Desktop <flavio-claude@zipman.it>  Sun, 01 Nov 2026 19:00:00 +0100
+
 activitytrack-desktop (0.9.3~alfa1) unstable; urgency=medium
 
   * First test release (docs/DESIGN.md, phases 1-3).
