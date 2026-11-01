@@ -79,9 +79,11 @@ Targets: KDE Plasma and XFCE, on Wayland and X11; Windows 10 and 11 (§3.1).
 
 ## 4. Technology
 
-**Python 3 + Qt 6 (PySide6), from the distribution's packages**
-(`python3-pyside6.qtwidgets`, `.qtdbus`, `.qtnetwork`; Debian 13: 6.8,
-Debian 14: 6.11). Standard library SQLite for the local store.
+**Python 3 + Qt 6 through PyQt6, from the distribution's packages**
+(`python3-pyqt6`: Debian 13 6.9, Debian 14 6.11, Ubuntu 24.04 6.6,
+Ubuntu 26.04 6.10). Standard library SQLite for the local store.
+PySide6 was the first choice, but Ubuntu 24.04 does not have it; PyQt6 is
+GPL v3, as this project.
 
 Why:
 - Qt's tray is the one that works on Plasma and XFCE under Wayland and
@@ -100,8 +102,6 @@ AWT's, XEmbed only (no tray on Wayland), and its windows run under
 XWayland; a JVM for a resident tray icon is also heavy. What would be
 reused is about 2,100 lines, ported to Python with their tests (§9).
 
-To check before phase 1: PySide6 in Ubuntu 24.04 and 26.04 (the `.deb`
-targets of the web).
 
 ## 5. Architecture
 
@@ -238,10 +238,10 @@ from the other at the next sync, where the answer is a synced change
   `~/.config/activitytrack-desktop/`.
 - **Windows**: a per-user installer `ActivityTrackDesktop-X.Y.Z-setup.exe`
   (no administrator rights), made on the CI's Windows runner with
-  PyInstaller (one folder: Python, PySide6, cryptography, keyring) and
+  PyInstaller (one folder: Python, PyQt6, cryptography, keyring) and
   Inno Setup; Start menu entry, autostart option, uninstaller. The
   bundled libraries are pinned in `requirements-windows.txt`, with the
-  same PySide6 minor as Debian 13 where possible.
+  same versions as Debian 13 where possible.
 - **Signing on Windows**: without a code-signing certificate SmartScreen
   warns at the first run ("Esegui comunque"). A certificate costs a yearly
   fee: to decide before the release.
@@ -277,5 +277,4 @@ from the other at the next sync, where the answer is a synced change
 
 ## 11. Open points
 
-- PySide6 on Ubuntu 24.04 (§4).
 - Code signing on Windows (§8).
