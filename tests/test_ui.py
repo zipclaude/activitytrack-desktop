@@ -226,3 +226,20 @@ class RemindersUiTest(unittest.TestCase):
         r.fire()
         self.assertEqual(len(n.shown), 1)
         self.assertTrue(r.timer.isActive())
+
+
+class GeneralUiTest(unittest.TestCase):
+    def test_update_settings_and_the_policy(self):
+        from activitytrack_desktop import __version__
+        from activitytrack_desktop.general import update_settings
+        from activitytrack_desktop.policy import Policy
+        QSettings().remove("updates")
+        free = Policy()
+        # a pre-release follows the betas by default
+        self.assertEqual(update_settings(free), (True, "-" in __version__))
+        QSettings().setValue("updates/check", False)
+        self.assertEqual(update_settings(free)[0], False)
+        fixed = Policy({"format": "activitytrack-policy", "schema": 1,
+                        "settings": {"updateCheck": {"value": True, "locked": True}}})
+        self.assertEqual(update_settings(fixed)[0], True)
+        QSettings().remove("updates")

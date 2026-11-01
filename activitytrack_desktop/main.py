@@ -123,6 +123,8 @@ def main(argv=None):
         window.closeEvent = lambda e: (e.accept(), quit_app() if not window.quitting else None)
     if not args.hidden or tray is None or session.account is None:
         window.show_up()
+    from .general import first_start
+    first_start()
     reminders = Reminders(actions, notifier, window.show_up)
     reminders.arm()
     service.start()
