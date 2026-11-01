@@ -29,12 +29,13 @@ jobs:
         run: |
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git \
-            build-essential debhelper dpkg-dev desktop-file-utils appstream
+            build-essential debhelper dpkg-dev devscripts equivs desktop-file-utils appstream
       - uses: actions/checkout@v4
       - name: Version
         run: |
           V=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' activitytrack_desktop/__init__.py)
-          case "$GITHUB_REF" in refs/tags/v*) test "v$V" = "${GITHUB_REF#refs/tags/}" ;; esac
+          # a release is built on a released library
+          case "$GITHUB_REF" in refs/tags/v*) test "v$V" = "${GITHUB_REF#refs/tags/}"; grep -q "^v" .github/lib-ref ;; esac
           # Debian: a beta 1.1.0-beta.1 is 1.1.0~beta.1 (sorts before 1.1.0)
           DV=$(echo "$V" | tr '-' '~')
           grep -q "^activitytrack-desktop ($DV)" debian/changelog
@@ -46,6 +47,13 @@ jobs:
           desktop-file-validate packaging/activitytrack-desktop.desktop
           appstreamcli validate --no-net --pedantic packaging/it.infraconsulting.activitytrack_desktop.metainfo.xml || \
             appstreamcli validate --no-net packaging/it.infraconsulting.activitytrack_desktop.metainfo.xml
+      - name: The library's package (python3-activitytrack at .github/lib-ref)
+        run: |
+          git clone --depth 1 -b "$(cat .github/lib-ref)" https://github.com/zipclaude/python3-activitytrack /tmp/lib
+          cd /tmp/lib
+          DEBIAN_FRONTEND=noninteractive mk-build-deps -i -r -t "apt-get -y --no-install-recommends" debian/control
+          dpkg-buildpackage -b -us -uc
+          DEBIAN_FRONTEND=noninteractive apt-get install -y /tmp/python3-activitytrack_*.deb
       - name: Package
         run: |
           dpkg-buildpackage -b -us -uc
@@ -102,7 +110,9 @@ jobs:
         with:
           python-version: "3.13"
       - name: Libraries and tools
-        run: python -m pip install -r requirements-windows.txt -r requirements-build-windows.txt
+        run: |
+          python -m pip install -r requirements-windows.txt -r requirements-build-windows.txt
+          python -m pip install "git+https://github.com/zipclaude/python3-activitytrack@$(Get-Content .github/lib-ref)"
       - name: Version
         run: |
           $V = (Select-String -Path activitytrack_desktop/__init__.py -Pattern '^__version__ = "(.*)"').Matches[0].Groups[1].Value
@@ -117,7 +127,8 @@ jobs:
         run: |
           pyinstaller --noconfirm --clean --windowed --name ActivityTrack `
             --icon packaging/windows/activitytrack-desktop.ico `
-            --paths . --collect-submodules keyring.backends --collect-data tzdata --collect-data activitytrack_desktop `
+            --paths . --collect-submodules keyring.backends --collect-data tzdata `
+            --collect-submodules activitytrack --collect-data activitytrack --collect-data activitytrack_desktop `
             packaging/windows/launcher.py
       - name: Try the bundle
         run: |
@@ -205,7 +216,7 @@ jobs:
             echo
             echo "It needs an ActivityTrack Web server to pair with (Dispositivi → Associa un dispositivo, then paste the link)."
             echo
-            echo "- Debian 13 / 14, Ubuntu 24.04 / 26.04: \`apt install ./activitytrack-desktop_${V}-<distro>_all.deb\` (deb13, deb14, ubuntu24.04, ubuntu26.04)"
+            echo "- Debian 13 / 14, Ubuntu 24.04 / 26.04: \`apt install ./python3-activitytrack_${V}-<distro>_all.deb ./activitytrack-desktop_${V}-<distro>_all.deb\` (deb13, deb14, ubuntu24.04, ubuntu26.04); the library [python3-activitytrack](https://github.com/zipclaude/python3-activitytrack/releases/tag/$(cat .github/lib-ref)) is in its own release"
             echo "- Other distributions: \`activitytrack-desktop-$V.tar.gz\`, see [README](https://github.com/${GITHUB_REPOSITORY}/blob/v$V/README.md)"
             echo "- Windows 10 / 11: \`ActivityTrackDesktop-$V-setup.exe\`, installed for the current user. It is not signed: Windows SmartScreen warns at the first run (More info → Run anyway); check the file against SHA256SUMS."
             echo

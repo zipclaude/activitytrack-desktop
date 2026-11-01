@@ -12,11 +12,12 @@ from PyQt6.QtWidgets import (
     QCheckBox, QDialog, QDialogButtonBox, QFormLayout, QGroupBox, QLabel, QSpinBox, QVBoxLayout, QWidget,
 )
 
-from . import reminders as R
-from .i18n import _
+from activitytrack import reminders as R
+from activitytrack.i18n import _
+from activitytrack.texts import clock
+from activitytrack.work import PAUSE, STOP, TO_COMPLETE, WORK, WorkError
+
 from .notify import DEFAULT
-from .texts import clock
-from .work import PAUSE, STOP, TO_COMPLETE, WORK, WorkError
 
 # switched on by default (docs/DESIGN.md §7)
 SWITCHES = {

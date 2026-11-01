@@ -11,41 +11,24 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from . import forms
-from .i18n import _
-from .policy import stored
-from . import texts
-from .texts import KINDS, clock, error_text, hm, state_label
-from .todos import DEFAULT_SHOW, SHOWS, WINDOWS, Todos
-from .work import (
-    ACTIVE, PAUSE, REOPEN, STOP, SUSPEND, SUSPENDED, TO_COMPLETE, TRAVEL, WORK, Work, WorkError,
+from activitytrack import texts
+from activitytrack.i18n import _
+from activitytrack.policy import stored
+from activitytrack.texts import KINDS, clock, error_text, hm, state_label
+from activitytrack.todos import DEFAULT_SHOW, SHOWS, WINDOWS, Todos
+from activitytrack.work import (
+    ACTIVE, PAUSE, REOPEN, STOP, SUSPENDED, TO_COMPLETE, TRAVEL, WORK, Work, WorkError,
 )
+
+from . import forms
 
 # the app's colours of the modes
 COLOURS = {WORK: "#2e7d32", PAUSE: "#f9a825", TRAVEL: "#1565c0", SUSPENDED: "#ef6c00", TO_COMPLETE: "#c62828"}
 
 
 def commands(entry, policy):
-    """[(label, command)] the state allows, as the app's card buttons."""
-    status, mode = entry.get("status"), entry.get("mode")
-    travel = policy.feature("travel")
-    out = []
-    if status == ACTIVE:
-        if mode != WORK:
-            out.append((_("Riprendi") if mode == PAUSE else _("Lavoro"), WORK))
-        if mode != PAUSE:
-            out.append((_("Pausa"), PAUSE))
-        if mode != TRAVEL and travel:
-            out.append((_("Viaggio"), TRAVEL))
-        if mode != PAUSE:
-            out.append((_("Sospendi"), SUSPEND))
-        out.append((_("Stop"), STOP))
-    elif status == SUSPENDED:
-        out.append((_("Riprendi"), WORK))
-        if travel:
-            out.append((_("Viaggio"), TRAVEL))
-        out.append((_("Stop"), STOP))
-    return out
+    """[(label, command)] the state allows, as the app's card buttons (the library's, for every interface)."""
+    return texts.entry_commands(entry, policy)
 
 
 class Actions(QObject):
@@ -155,7 +138,7 @@ class Actions(QObject):
     def todo_postpone(self, uid):
         """Later by the user's snooze (Promemoria), within the policy."""
         from .reminder_ui import local_intervals
-        from .reminders import config_of
+        from activitytrack.reminders import config_of
         self._do(self.todos.postpone, uid, config_of(self.work.policy, local_intervals())["planSnoozeMin"])
 
     def reopen_entry(self, uid):

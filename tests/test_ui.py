@@ -10,9 +10,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PyQt6.QtCore import QSettings  # noqa: E402
 from PyQt6.QtWidgets import QApplication  # noqa: E402
 
-from activitytrack_desktop import icons, wire  # noqa: E402
-from activitytrack_desktop.pairing import Account  # noqa: E402
-from activitytrack_desktop.session import Session  # noqa: E402
+from activitytrack import wire  # noqa: E402
+from activitytrack.texts import sync_needs_attention as needs_attention, sync_state as state_text  # noqa: E402
+from activitytrack_desktop import icons  # noqa: E402
+from activitytrack.pairing import Account  # noqa: E402
+from activitytrack.session import Session  # noqa: E402
 
 app = QApplication.instance() or QApplication([])
 # the filters remembered by the Home: in a folder of the tests, not the user's settings
@@ -40,7 +42,6 @@ class UiTest(unittest.TestCase):
         self.session.vault.put("d1", "tok")
 
     def test_the_states_of_the_sync(self):
-        from activitytrack_desktop.ui import needs_attention, state_text
         s = self.session
         self.assertIn("Non associato", state_text(s, "idle", ""))
         self.assertTrue(needs_attention(s, "idle"))
@@ -49,7 +50,7 @@ class UiTest(unittest.TestCase):
         self.assertFalse(needs_attention(s, "idle"))
         self.assertIn("non raggiungibile", state_text(s, "offline", "x"))
         s.store.set_state("incompatible", wire.APP_TOO_OLD)
-        self.assertIn("aggiorna ActivityTrack Desktop", state_text(s, "incompatible", ""))
+        self.assertIn("aggiorna ActivityTrack sul PC", state_text(s, "incompatible", ""))
         s.store.set_state("incompatible", wire.SERVER_TOO_OLD)
         self.assertIn("va aggiornato il server", state_text(s, "incompatible", ""))
         self.assertTrue(needs_attention(s, "incompatible"))
@@ -74,7 +75,7 @@ class UiTest(unittest.TestCase):
     def test_the_tray(self):
         from activitytrack_desktop.home import Actions
         from activitytrack_desktop.ui import MainWindow, Tray
-        from activitytrack_desktop.work import StartRequest
+        from activitytrack.work import StartRequest
         actions = Actions(self.session)
         w = MainWindow(self.session, self.service, actions)
         t = Tray(self.session, self.service, w, quit_app=lambda: None, actions=actions)
@@ -203,7 +204,7 @@ class RemindersUiTest(unittest.TestCase):
 
     def test_confirm_posted_and_answered(self):
         from activitytrack_desktop.reminder_ui import Reminders
-        from activitytrack_desktop.work import StartRequest
+        from activitytrack.work import StartRequest
         work = self.actions.work
         now = [work.clock()]
         work.clock = lambda: now[0]
@@ -232,7 +233,7 @@ class GeneralUiTest(unittest.TestCase):
     def test_update_settings_and_the_policy(self):
         from activitytrack_desktop import __version__
         from activitytrack_desktop.general import update_settings
-        from activitytrack_desktop.policy import Policy
+        from activitytrack.policy import Policy
         QSettings().remove("updates")
         free = Policy()
         # a pre-release follows the betas by default
@@ -243,3 +244,26 @@ class GeneralUiTest(unittest.TestCase):
                         "settings": {"updateCheck": {"value": True, "locked": True}}})
         self.assertEqual(update_settings(fixed)[0], True)
         QSettings().remove("updates")
+
+
+class WatchTest(unittest.TestCase):
+    def test_another_interfaces_change_is_seen(self):
+        from activitytrack.store import Store
+        from activitytrack_desktop.service import SyncService
+        with tempfile.TemporaryDirectory() as d:
+            session = Session(d, use_keyring=False)
+            service = SyncService(session)
+            seen = []
+            service.elsewhere.connect(lambda: seen.append(True))
+            service._watch_data()
+            service._watch_data()
+            self.assertEqual(seen, [])
+            # another connection (the cli in another process) commits
+            other = Store(session.folder / "activitytrack.sqlite3")
+            other.write("todo", "t1", {"title": "Dalla CLI"}, now_ms=1)
+            service._watch_data()
+            self.assertEqual(seen, [True])
+            self.assertTrue(service._debounce.isActive())
+            other.close()
+            service.stop()
+            session.store.close()

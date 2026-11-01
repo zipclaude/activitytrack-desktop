@@ -7,12 +7,15 @@ import sys
 import traceback
 from pathlib import Path
 
-from PyQt6.QtCore import QLibraryInfo, QLocale, QStandardPaths, QTranslator
+from PyQt6.QtCore import QLibraryInfo, QLocale, QTranslator
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 from PyQt6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
+import activitytrack
+from activitytrack.i18n import _, add_catalogs, set_language
+from activitytrack.paths import data_dir
+
 from . import __version__
-from .i18n import _, set_language
 
 APP_ID = "activitytrack-desktop"
 
@@ -55,6 +58,8 @@ def _language(app, forced=None):
     the interface's modules are imported; Qt's own texts (Annulla, Sì…) and
     the dates follow it.
     """
+    # the desktop's own texts, with the library's
+    add_catalogs(Path(__file__).with_name("locale"))
     lang = set_language(forced or QLocale.system().name())
     locale = QLocale(lang) if lang != QLocale.system().name()[:2] else QLocale.system()
     QLocale.setDefault(locale)
@@ -74,7 +79,7 @@ def _selftest(app, out):
     from .notify import Notifier
     from .reminder_ui import Reminders
     from .service import SyncService
-    from .session import Session
+    from activitytrack.session import Session
     from .ui import MainWindow, Tray
 
     try:
@@ -113,14 +118,15 @@ def main(argv=None):
     app.setApplicationName(APP_ID)
     app.setApplicationDisplayName("ActivityTrack")
     app.setApplicationVersion(__version__)
+    activitytrack.set_client("ActivityTrackDesktop", __version__)
     app.setDesktopFileName(APP_ID)
     app.setQuitOnLastWindowClosed(False)
 
     if args.selftest:
         return _selftest(app, args.selftest)
 
-    folder = Path(args.data) if args.data else Path(
-        QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation))
+    # the folder of every interface (desktop, cli, tui): one application, one device
+    folder = Path(args.data) if args.data else data_dir()
     _log_errors(folder)
     # one instance per data folder: a local socket on Linux, a named pipe on Windows
     # (hash() changes at every start: a stable digest instead)
@@ -131,8 +137,8 @@ def main(argv=None):
     server = QLocalServer()
     server.listen(name)
 
-    from .policy import stored
-    from .session import Session
+    from activitytrack.policy import stored
+    from activitytrack.session import Session
 
     session = Session(folder, allow_http=args.dev)
     _language(app, stored(session.store).language)
@@ -146,6 +152,7 @@ def main(argv=None):
     # a command here goes out in a few seconds; what the sync brought shows at once
     actions.changed.connect(service.changed_here)
     service.changed.connect(lambda *_a: (actions.refresh_policy(), actions.changed_elsewhere()))
+    service.elsewhere.connect(actions.changed_elsewhere)
     from .notify import Notifier
     from .reminder_ui import Reminders
 

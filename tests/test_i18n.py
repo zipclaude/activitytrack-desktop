@@ -3,8 +3,8 @@ import importlib.util
 import unittest
 from pathlib import Path
 
-from activitytrack_desktop import i18n
-from activitytrack_desktop.policy import Policy
+from activitytrack import i18n
+from activitytrack.policy import Policy
 
 
 SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "strings.py"
@@ -19,6 +19,11 @@ def _strings_module():
 
 
 class I18nTest(unittest.TestCase):
+    def setUp(self):
+        # the desktop's texts, with the library's (from the package: the tests also run on the installed one)
+        import activitytrack_desktop
+        i18n.add_catalogs(Path(activitytrack_desktop.__file__).with_name("locale"))
+
     def tearDown(self):
         i18n.set_language("it")
 

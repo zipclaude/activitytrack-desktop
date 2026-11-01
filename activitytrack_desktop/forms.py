@@ -16,9 +16,9 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from .i18n import _
-from .texts import KINDS, clock, error_text, field_label, hm, state_label
-from .work import (
+from activitytrack.i18n import _
+from activitytrack.texts import KINDS, clock, error_text, field_label, hm, state_label
+from activitytrack.work import (
     ACTIVE, PAUSE, STOP, SUSPEND, TO_COMPLETE, TRAVEL, WORK, StartRequest, WorkError,
 )
 
