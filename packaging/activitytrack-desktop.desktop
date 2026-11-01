@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=ActivityTrack
+GenericName=Time tracking
+GenericName[it]=Registrazione attività
+Comment=Running activities and to-dos of ActivityTrack, from the tray
+Comment[it]=Attività in corso e Da fare di ActivityTrack, dall'area di notifica
+Exec=activitytrack-desktop
+Icon=activitytrack-desktop
+Terminal=false
+Categories=Office;ProjectManagement;Qt;
+Keywords=time;tracking;activities;todo;
+Keywords[it]=tempo;attività;da fare;ore;
+StartupNotify=false
+SingleMainWindow=true

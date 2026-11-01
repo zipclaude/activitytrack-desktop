@@ -5,7 +5,7 @@ import threading
 from datetime import datetime
 
 from PyQt6.QtCore import QObject, Qt, pyqtSignal as Signal
-from PyQt6.QtGui import QAction, QGuiApplication
+from PyQt6.QtGui import QAction, QGuiApplication, QIcon
 from PyQt6.QtWidgets import (
     QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
     QPushButton, QSystemTrayIcon, QVBoxLayout, QWidget,
@@ -205,7 +205,8 @@ class MainWindow(QMainWindow):
     def __init__(self, session, service):
         super().__init__()
         self.setWindowTitle("ActivityTrack")
-        self.setWindowIcon(icons.icon())
+        # the installed icon (the app's), else the drawn one
+        self.setWindowIcon(QIcon.fromTheme("activitytrack-desktop", icons.icon()))
         self.panel = SyncPanel(session, service)
         self.setCentralWidget(self.panel)
         self.resize(560, 420)

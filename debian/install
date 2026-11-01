@@ -1,0 +1,5 @@
+activitytrack_desktop usr/share/activitytrack-desktop/
+packaging/activitytrack-desktop usr/bin/
+packaging/activitytrack-desktop.desktop usr/share/applications/
+packaging/activitytrack-desktop.svg usr/share/icons/hicolor/scalable/apps/
+packaging/it.infraconsulting.activitytrack_desktop.metainfo.xml usr/share/metainfo/

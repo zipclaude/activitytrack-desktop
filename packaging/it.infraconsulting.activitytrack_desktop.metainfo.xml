@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>it.infraconsulting.activitytrack_desktop</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>ActivityTrack</name>
+  <summary>Running activities and to-dos of ActivityTrack, from the tray</summary>
+  <summary xml:lang="it">Attività in corso e Da fare di ActivityTrack, dall'area di notifica</summary>
+  <description>
+    <p>ActivityTrack Desktop keeps the running activities and the to-dos of the ActivityTrack app a click away from the system tray, so that an activity goes in from the keyboard instead of the phone.</p>
+    <p>It is paired with the organisation's ActivityTrack Web server like a phone and syncs both ways; without a network it keeps working and syncs when the network is back.</p>
+  </description>
+  <launchable type="desktop-id">activitytrack-desktop.desktop</launchable>
+  <url type="homepage">https://github.com/zipclaude/activitytrack-desktop</url>
+  <developer id="it.infraconsulting">
+    <name>ActivityTrack contributors</name>
+  </developer>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.9.4~dev" date="2026-11-01"/>
+  </releases>
+</component>
