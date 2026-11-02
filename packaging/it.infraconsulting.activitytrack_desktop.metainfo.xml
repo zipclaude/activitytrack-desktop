@@ -17,6 +17,7 @@
   </developer>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.9.4~beta4" date="2026-11-02" type="development"/>
     <release version="0.9.4~beta3" date="2026-11-02" type="development"/>
     <release version="0.9.4~beta2" date="2026-11-02" type="development"/>
     <release version="0.9.4~beta1" date="2026-11-01" type="development"/>

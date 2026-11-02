@@ -1,3 +1,15 @@
+activitytrack-desktop (0.9.4~beta4-1) unstable; urgency=medium
+
+  * The app's 5-minute time grid next to the time fields: start and end by
+    dragging or two clicks, the other activities hatched (web issue #38).
+  * Settings → Generale: dates European, American or ISO, 24 or 12 hours;
+    the command line and the terminal follow them.
+  * A known client chosen brings its company.
+  * On the library 0.9.4-beta4: resuming without concurrent entries
+    suspends the others (app issue #132).
+
+ -- ActivityTrack <flavio-claude@zipman.it>  Mon, 02 Nov 2026 15:52:22 +0100
+
 activitytrack-desktop (0.9.4~beta3-1) unstable; urgency=medium
 
   * A Debian revision in the version, the distribution in it
