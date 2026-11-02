@@ -125,6 +125,23 @@ activity it also shows the **times**: each stretch (work, travel, pause) can
 be changed or deleted, and a new one added, when the policy allows it. Two
 overlapping stretches mark the activity **"da verificare"** (to check).
 
+The **company** comes before the **client** and filters its list; a known
+client chosen brings its company.
+
+### Dates and times
+
+Dates and times are typed in the format chosen on the **Generale** tab, or
+picked: the calendar from the field's arrow and, for times, the app's
+**5-minute grid** from the **▦** button next to the field. One row per hour,
+12 hours at a time (**▲ Prima** / **Dopo ▼** move the window by 3 hours).
+Start and end are chosen together: drag from the first cell to the last, or
+click the first and then the last, and **OK**; at the top the range and its
+length, the **hatched** cells are taken by other activities of that day.
+**Orario esatto** (exact time) with **Usa** takes the minutes off the grid
+(e.g. 09:37).
+
+![The time grid](../img/grid.png)
+
 ### Stop and completion
 
 **Stop** closes the activity at once when it has client and description.
@@ -180,11 +197,17 @@ the other device.
 
 ## 8. General
 
+![General](../img/general.png)
+
 The **Generale** tab has:
 
 - **"Avvia ActivityTrack all'accesso"** (start at sign-in): it starts with the
   session, hidden in the notification area. On Linux it is switched on at the
   first start; on Windows the installer offers it;
+- **dates and times**: the date format, European (31/12/2026), American
+  (12/31/2026) or ISO (2026-12-31), and the time format, 24 hours (18:30) or
+  12 hours (6:30 PM). The command line and the terminal follow them too, as
+  the preferences of ActivityTrack Web;
 - **updates**: once a day ActivityTrack checks GitHub for a newer version and
   shows it with **"Scarica"** (download). **"Anche le versioni beta"** (betas
   too) includes the test versions. The policy may fix both.

@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QCheckBox, QDialog, QDialogButtonBox, QFormLayout, QGroupBox, QLabel, QSpinBox, QVBoxLayout, QWidget,
 )
 
-from activitytrack import reminders as R
+from activitytrack import formats, reminders as R
 from activitytrack.i18n import _
 from activitytrack.texts import clock
 from activitytrack.work import PAUSE, STOP, TO_COMPLETE, WORK, WorkError
@@ -131,7 +131,7 @@ class Reminders(QObject):
             t = self.actions.session.store.get("todo", r.key) or {}
             start = r.at + timedelta(minutes=self.config()["planLeadMin"])
             who = w.name("client", t.get("clientUid")) or w.name("company", t.get("companyUid"))
-            return (_("%s alle %s") % (t.get("title") or "", start.strftime("%H:%M")), who,
+            return (_("%s alle %s") % (t.get("title") or "", formats.time(start)), who,
                     [("start", _("Avvia")), ("postpone", _("Posticipa di %d min") % self.config()["planSnoozeMin"]),
                      ("replan", _("Ripianifica"))])
         e = self.actions.session.store.get("entry", r.key) or {}

@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from activitytrack import texts
+from activitytrack import formats, texts
 from activitytrack.i18n import _
 from activitytrack.policy import stored
 from activitytrack.texts import KINDS, clock, error_text, hm, state_label
@@ -55,6 +55,8 @@ class Actions(QObject):
         return QApplication.activeWindow()
 
     def changed_elsewhere(self):
+        # the command line or the terminal may have changed the formats too
+        formats.load(self.session.store)
         self.redraw.emit()
 
     def _done(self):
@@ -276,7 +278,7 @@ class EntryRow(QFrame):
         sub.setStyleSheet("color: #c62828" if missing else "color: palette(placeholder-text)")
         text.addWidget(sub)
         lay.addLayout(text, 1)
-        lay.addWidget(QLabel(_("fino alle %s") % end.strftime("%H:%M")))
+        lay.addWidget(QLabel(_("fino alle %s") % formats.time(end)))
         uid = e["uid"]
         if missing:
             lay.addWidget(QPushButton(_("Completa…"), clicked=lambda: actions.complete(uid)))

@@ -16,11 +16,14 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+from activitytrack import formats
 from activitytrack.i18n import _
 from activitytrack.texts import KINDS, clock, error_text, field_label, hm, state_label
 from activitytrack.work import (
     ACTIVE, PAUSE, STOP, SUSPEND, TO_COMPLETE, TRAVEL, WORK, StartRequest, WorkError,
 )
+
+from .timegrid_ui import attach_range, attach_single
 
 KEEP = "KEEP"
 
@@ -31,6 +34,38 @@ def _ms(edit):
 
 def _datetime(ms):
     return QDateTime.fromMSecsSinceEpoch(int(ms))
+
+
+def _formatted(*edits):
+    """Date and time edits in the user's formats (European, American, ISO; 24 or 12 hours)."""
+    for e in edits:
+        if isinstance(e, QDateTimeEdit) and not isinstance(e, (QDateEdit, QTimeEdit)):
+            e.setDisplayFormat(f"{formats.qt_date()} {formats.qt_time()}")
+        elif isinstance(e, QDateEdit):
+            e.setDisplayFormat("ddd " + formats.qt_date())
+        else:
+            e.setDisplayFormat(formats.qt_time())
+
+
+def _follow_client(company, client):
+    """A known client chosen brings its company, as in the app."""
+    def follow():
+        uid = client.value()
+        r = client.work.store.get("client", uid) if uid else None
+        if r and r.get("companyUid") and company.value() != r["companyUid"]:
+            company.set_value(r["companyUid"])
+            client.set_value(uid)
+    client.activated.connect(lambda _i: follow())
+
+
+def _row(*widgets):
+    w = QWidget()
+    lay = QHBoxLayout(w)
+    lay.setContentsMargins(0, 0, 0, 0)
+    for x in widgets:
+        lay.addWidget(x)
+    lay.addStretch()
+    return w
 
 
 class MasterCombo(QComboBox):
@@ -120,13 +155,16 @@ class StartOptions(QWidget):
         lay.addRow("", self.done)
         self.start = QDateTimeEdit(QDateTime.currentDateTime().addSecs(-30 * 60), calendarPopup=True)
         self.end = QDateTimeEdit(QDateTime.currentDateTime(), calendarPopup=True)
+        _formatted(self.start, self.end)
         for e in (self.start, self.end):
-            e.setDisplayFormat("dd/MM/yyyy HH:mm")
             e.setMaximumDateTime(QDateTime.currentDateTime().addSecs(60))
+        grid_start, grid_end = attach_range(work, self.start, self.end, parent=self)
         times = QHBoxLayout()
         times.addWidget(self.start)
+        times.addWidget(grid_start)
         times.addWidget(QLabel("→"))
         times.addWidget(self.end)
+        times.addWidget(grid_end)
         times.addStretch()
         self.times = QWidget()
         self.times.setLayout(times)
@@ -289,6 +327,7 @@ class EntryDialog(_Dialog):
         add("notes", self.notes)
         add("tags", self.tags)
         self.company.currentTextChanged.connect(self._company_changed)
+        _follow_client(self.company, self.client)
         self.preset.activated.connect(self._preset)
         self.lay.addLayout(form)
 
@@ -438,15 +477,15 @@ class SegmentDialog(_Dialog):
                                    calendarPopup=True)
         self.end = QDateTimeEdit(_datetime(segment["endUtcMs"]) if segment and segment.get("endUtcMs") else now,
                                  calendarPopup=True)
-        for e in (self.start, self.end):
-            e.setDisplayFormat("dd/MM/yyyy HH:mm")
+        _formatted(self.start, self.end)
         if segment:
             self.kind.setCurrentIndex(max(0, self.kind.findData(segment["kind"])))
         self.kind.setEnabled(not running)
         self.end.setEnabled(not running)
+        grid_start, grid_end = attach_range(work, self.start, self.end, skip=segment["uid"] if segment else None, parent=self)
         form.addRow(_("Tipo"), self.kind)
-        form.addRow(_("Inizio"), self.start)
-        form.addRow(_("Fine"), self.end if not running else QLabel(_("in corso")))
+        form.addRow(_("Inizio"), _row(self.start, grid_start))
+        form.addRow(_("Fine"), _row(self.end, grid_end) if not running else QLabel(_("in corso")))
         self.lay.addLayout(form)
         self.running = running
         self.buttons(_("Salva"))
@@ -532,17 +571,17 @@ def stop(work, uid, parent=None):
 class _DayTime(QWidget):
     """An optional day with an optional time (a due date, a plan)."""
 
-    def __init__(self, label, with_duration=False, parent=None):
+    def __init__(self, work, label, with_duration=False, parent=None):
         super().__init__(parent)
         lay = QHBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         self.on = QCheckBox(label)
         self.day = QDateEdit(QDate.currentDate(), calendarPopup=True)
-        self.day.setDisplayFormat("ddd dd/MM/yyyy")
         self.timed = QCheckBox(_("alle"))
         self.time = QTimeEdit(QTime(9, 0))
-        self.time.setDisplayFormat("HH:mm")
-        for w in (self.on, self.day, self.timed, self.time):
+        _formatted(self.day, self.time)
+        self.grid = attach_single(work, self.day, self.time, parent=self)
+        for w in (self.on, self.day, self.timed, self.time, self.grid):
             lay.addWidget(w)
         self.duration = None
         if with_duration:
@@ -559,6 +598,7 @@ class _DayTime(QWidget):
         self.day.setEnabled(on)
         self.timed.setEnabled(on)
         self.time.setEnabled(on and self.timed.isChecked())
+        self.grid.setEnabled(on and self.timed.isChecked())
         if self.duration is not None:
             self.duration.setEnabled(on and self.timed.isChecked())
 
@@ -605,6 +645,7 @@ class TodoDialog(_Dialog):
         if p.field("company").visible:
             form.addRow(field_label(p, "company"), self.company)
         form.addRow(field_label(p, "client"), self.client)
+        _follow_client(self.company, self.client)
         self.notes = QPlainTextEdit(t.get("notes") or "")
         self.notes.setTabChangesFocus(True)
         self.notes.setMaximumHeight(110)
@@ -615,11 +656,11 @@ class TodoDialog(_Dialog):
         self.refs.setPlaceholderText(_("ticket, link: uno per riga"))
         if p.field("refs").visible:
             form.addRow(_("Riferimenti"), self.refs)
-        self.due = _DayTime(_("entro"))
+        self.due = _DayTime(work, _("entro"))
         self.due.set(_iso(t.get("dueDate")), t.get("dueTimeMin"))
         if p.field("todoDue").visible:
             form.addRow(field_label(p, "todoDue"), self.due)
-        self.plan = _DayTime(_("il"), with_duration=True)
+        self.plan = _DayTime(work, _("il"), with_duration=True)
         self.plan.set(_iso(t.get("planDate")), t.get("planStartMin"), t.get("durationMin"))
         if plan is not None:
             self.plan.set(*plan)

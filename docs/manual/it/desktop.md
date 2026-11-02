@@ -123,6 +123,23 @@ viaggio, pausa) si può modificare o eliminare, e se ne aggiunge uno nuovo,
 quando la policy lo permette. Due tratti sovrapposti segnano l'attività
 **"da verificare"**.
 
+L'**azienda** viene prima del **cliente** e ne filtra l'elenco; scegliendo un
+cliente conosciuto, l'azienda diventa la sua.
+
+### Date e orari
+
+Date e orari si scrivono nel formato scelto nella scheda **Generale**, oppure
+si scelgono: il calendario dalla freccia del campo e, per gli orari, la
+**griglia a 5 minuti** dell'app dal pulsante **▦** accanto al campo. Una riga
+per ora, 12 ore alla volta (**▲ Prima** / **Dopo ▼** spostano la finestra di
+3 ore). Inizio e fine si scelgono insieme: trascinando dalla prima casella
+all'ultima, oppure cliccando la prima e poi l'ultima, e **OK**; in alto
+l'intervallo e la durata, le caselle **tratteggiate** sono occupate da altre
+attività di quel giorno. **Orario esatto** con **Usa** prende i minuti fuori
+griglia (es. 09:37).
+
+![La griglia degli orari](../img/grid.png)
+
 ### Stop e completamento
 
 **Stop** chiude subito l'attività se ha cliente e descrizione. Altrimenti, o
@@ -175,11 +192,17 @@ sull'altro dispositivo.
 
 ## 8. Generale
 
+![Generale](../img/general.png)
+
 La scheda **Generale** ha:
 
 - **"Avvia ActivityTrack all'accesso"**: parte con la sessione, nascosto
   nell'area di notifica. Su Linux si accende al primo avvio; su Windows lo
   propone l'installazione;
+- **date e orari**: il formato delle date, europeo (31/12/2026), americano
+  (12/31/2026) o ISO (2026-12-31), e degli orari, 24 ore (18:30) o 12 ore
+  (6:30 PM). Valgono anche per la riga di comando e il terminale, come le
+  preferenze di ActivityTrack Web;
 - **aggiornamenti**: una volta al giorno ActivityTrack controlla su GitHub se
   c'è una versione nuova, e la notifica con **"Scarica"**. **"Anche le
   versioni beta"** include le versioni di prova. La policy può fissare

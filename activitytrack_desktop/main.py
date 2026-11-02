@@ -142,6 +142,8 @@ def main(argv=None):
 
     session = Session(folder, allow_http=args.dev)
     _language(app, stored(session.store).language)
+    from activitytrack import formats
+    formats.load(session.store)
 
     from .service import SyncService
     from .home import Actions
