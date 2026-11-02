@@ -112,7 +112,10 @@ class GridView(QWidget):
             for c in range(12):
                 m = (h * 12 + c) * timegrid.STEP
                 rect = QRectF(self._x(c), y + 1, CELL, ROW - 3)
-                chosen = start is not None and (start <= m < end if end is not None else m == start - start % timegrid.STEP)
+                if start is None:
+                    chosen = False
+                else:
+                    chosen = start <= m < end if end is not None else m == start - start % timegrid.STEP
                 p.setPen(Qt.PenStyle.NoPen)
                 p.setBrush(on if chosen else cell)
                 p.drawRoundedRect(rect, 4, 4)
@@ -176,7 +179,8 @@ class TimeGridDialog(QDialog):
     def _show(self):
         start, end = self.grid.selection()
         if self.ranged:
-            text = (formats.minutes(start) if start is not None else "…") + " – " + (formats.minutes(end) if end is not None else "…")
+            shown = [formats.minutes(x) if x is not None else "…" for x in (start, end)]
+            text = " – ".join(shown)
             if start is not None and end is not None and end > start:
                 text += " · " + hm((end - start) * 60_000)
         else:

@@ -482,7 +482,8 @@ class SegmentDialog(_Dialog):
             self.kind.setCurrentIndex(max(0, self.kind.findData(segment["kind"])))
         self.kind.setEnabled(not running)
         self.end.setEnabled(not running)
-        grid_start, grid_end = attach_range(work, self.start, self.end, skip=segment["uid"] if segment else None, parent=self)
+        grid_start, grid_end = attach_range(work, self.start, self.end, skip=segment["uid"] if segment else None,
+                                            parent=self)
         form.addRow(_("Tipo"), self.kind)
         form.addRow(_("Inizio"), _row(self.start, grid_start))
         form.addRow(_("Fine"), _row(self.end, grid_end) if not running else QLabel(_("in corso")))
