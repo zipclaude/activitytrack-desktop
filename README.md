@@ -17,7 +17,7 @@ and XFCE, on Wayland and X11.
 
 From the [releases](https://github.com/zipclaude/activitytrack-desktop/releases):
 
-- **Debian 13 / 14, Ubuntu 24.04 / 26.04**: `sudo apt install ./python3-activitytrack_<version>-<distro>_all.deb ./activitytrack-desktop_<version>-<distro>_all.deb`
+- **Debian 13 / 14, Ubuntu 24.04 / 26.04**: `sudo apt install ./python3-activitytrack_<version>-1-<distro>_all.deb ./activitytrack-desktop_<version>-1-<distro>_all.deb`
   (the library from its own release),
   then start *ActivityTrack* from the menu.
 - **Other distributions**: install Python 3.11 or newer, PyQt6, cryptography and keyring
