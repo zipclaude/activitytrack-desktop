@@ -11,7 +11,7 @@ Package: activitytrack-desktop
 Architecture: all
 Depends: ${misc:Depends},
  python3 (>= 3.11),
- python3-activitytrack (>= 0.9.4~beta4),
+ python3-activitytrack (>= 0.9.4~beta5),
  python3-pyqt6,
  qt6-qpa-plugins
 Recommends: qt6-translations-l10n, qt6-wayland

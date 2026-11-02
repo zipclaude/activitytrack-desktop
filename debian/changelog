@@ -1,3 +1,13 @@
+activitytrack-desktop (0.9.4~beta5-1) unstable; urgency=medium
+
+  * Security review fixes: the single-instance socket in the user's
+    runtime folder; closing the window without a tray quits once; quitting
+    during a blocked sync takes at most 2 s; pairing cannot be cancelled
+    half-way; update links only to github.com; postpone label as the action.
+  * On the library 0.9.4-beta5 (its security fixes).
+
+ -- ActivityTrack <flavio-claude@zipman.it>  Mon, 02 Nov 2026 18:55:28 +0100
+
 activitytrack-desktop (0.9.4~beta4-1) unstable; urgency=medium
 
   * The app's 5-minute time grid next to the time fields: start and end by
