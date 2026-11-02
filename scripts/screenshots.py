@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import QLibraryInfo, QLocale, QSettings, QTimer, QTranslator  # noqa: E402
+from PyQt6.QtCore import QLibraryInfo, QLocale, QSettings, Qt, QTimer, QTranslator  # noqa: E402
 from PyQt6.QtWidgets import QApplication  # noqa: E402
 
 OUT = ROOT / "docs" / "manual" / "img"
@@ -133,6 +133,19 @@ def main():
     t.resize(600, 480)
     t.show()
     t.grab().save(str(OUT / "todo.png"))
+
+    from PyQt6.QtCore import QPoint
+    from PyQt6.QtTest import QTest
+    from activitytrack_desktop.timegrid_ui import TimeGridDialog
+
+    today = datetime.now().date()
+    g = TimeGridDialog(today, None, None, ranged=True, busy=w.busy(today))
+    cell = lambda i: QPoint(int(g.grid._x(i % 12) + 8), int((i // 12 - g.grid.first) * 24 + 10))  # noqa: E731
+    QTest.mousePress(g.grid, Qt.MouseButton.LeftButton, pos=cell(99))
+    QTest.mouseMove(g.grid, cell(116))
+    QTest.mouseRelease(g.grid, Qt.MouseButton.LeftButton, pos=cell(116))
+    g.show()
+    g.grab().save(str(OUT / "grid.png"))
 
     from activitytrack_desktop import reminder_ui
 

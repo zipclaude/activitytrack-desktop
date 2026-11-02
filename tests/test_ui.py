@@ -267,3 +267,60 @@ class WatchTest(unittest.TestCase):
             other.close()
             service.stop()
             session.store.close()
+
+
+class TimeGridTest(unittest.TestCase):
+    """The app's 5-minute grid: a drag or two clicks choose start and end (web issue #38)."""
+
+    def tearDown(self):
+        from activitytrack import formats
+        formats.set_formats(formats.EU, formats.H24)
+
+    def _centre(self, grid, i):
+        from PyQt6.QtCore import QPoint
+        row, col = i // 12 - grid.first, i % 12
+        return QPoint(int(grid._x(col) + 8), int(row * 24 + 10))
+
+    def test_drag_and_two_clicks(self):
+        from datetime import date
+
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtTest import QTest
+
+        from activitytrack_desktop.timegrid_ui import TimeGridDialog
+
+        d = TimeGridDialog(date(2026, 11, 2), 9 * 60, 10 * 60, ranged=True, busy=[(14 * 60, 15 * 60)])
+        g = d.grid
+        self.assertEqual(g.first, 7)
+        left = Qt.MouseButton.LeftButton
+        QTest.mousePress(g, left, pos=self._centre(g, 111))
+        QTest.mouseMove(g, self._centre(g, 120))
+        QTest.mouseMove(g, self._centre(g, 127))
+        QTest.mouseRelease(g, left, pos=self._centre(g, 127))
+        self.assertEqual(d.head.text(), "09:15 – 10:40 · 1:25")
+        d._ok()
+        self.assertEqual((d.start, d.end), (555, 640))
+        # two clicks, the second after the window moved
+        d = TimeGridDialog(date(2026, 11, 2), None, None, ranged=True)
+        g = d.grid
+        QTest.mouseClick(g, left, pos=self._centre(g, 8 * 12))
+        self.assertTrue(d.hint.isVisibleTo(d))
+        d._move(3)
+        QTest.mouseClick(g, left, pos=self._centre(g, 18 * 12 + 5))
+        d._ok()
+        self.assertEqual((d.start, d.end), (8 * 60, 18 * 60 + 30))
+
+    def test_a_single_time_and_twelve_hours(self):
+        from datetime import date
+
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtTest import QTest
+
+        from activitytrack import formats
+        from activitytrack_desktop.timegrid_ui import TimeGridDialog
+
+        formats.set_formats(formats.US, formats.H12)
+        d = TimeGridDialog(date(2026, 11, 2), 14 * 60 + 30)
+        self.assertEqual(d.head.text(), "2:30 PM")
+        QTest.mouseClick(d.grid, Qt.MouseButton.LeftButton, pos=self._centre(d.grid, 16 * 12 + 3))
+        self.assertEqual(d.start, 16 * 60 + 15)
