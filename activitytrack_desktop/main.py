@@ -3,6 +3,7 @@
 
 import argparse
 import hashlib
+import os
 import sys
 import traceback
 from pathlib import Path
@@ -33,22 +34,43 @@ def _already_running(name):
     return False
 
 
+def _socket_name(folder):
+    """
+    The single instance's socket, one per data folder (hash() changes at
+    every start: a stable digest instead). Windows' named pipes are per
+    session; elsewhere a name alone is a file in /tmp another user could
+    take first: in the user's runtime folder, else with the uid in the name.
+    """
+    name = f"{APP_ID}-{hashlib.sha1(str(folder.resolve()).encode()).hexdigest()[:12]}"
+    if sys.platform == "win32":
+        return name
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    try:
+        if runtime and os.path.isabs(runtime) and os.stat(runtime).st_uid == os.getuid():
+            return os.path.join(runtime, name)
+    except OSError:
+        pass
+    return f"{name}-{os.getuid()}"
+
+
+def _log(folder, text):
+    """A line in errors.log (and on stderr)."""
+    sys.stderr.write(text + "\n")
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        with open(folder / "errors.log", "a", encoding="utf-8") as f:
+            f.write(text + "\n")
+    except OSError:
+        pass
+
+
 def _log_errors(folder):
     """
     PyQt aborts the process on an exception escaping a slot: a tray
     application must outlive a bug, so it is written to errors.log instead.
     """
-    log = folder / "errors.log"
-
     def hook(kind, value, tb):
-        text = "".join(traceback.format_exception(kind, value, tb))
-        sys.stderr.write(text)
-        try:
-            folder.mkdir(parents=True, exist_ok=True)
-            with open(log, "a", encoding="utf-8") as f:
-                f.write(text + "\n")
-        except OSError:
-            pass
+        _log(folder, "".join(traceback.format_exception(kind, value, tb)))
     sys.excepthook = hook
 
 
@@ -129,13 +151,17 @@ def main(argv=None):
     folder = Path(args.data) if args.data else data_dir()
     _log_errors(folder)
     # one instance per data folder: a local socket on Linux, a named pipe on Windows
-    # (hash() changes at every start: a stable digest instead)
-    name = f"{APP_ID}-{hashlib.sha1(str(folder.resolve()).encode()).hexdigest()[:12]}"
+    name = _socket_name(folder)
     if _already_running(name):
         return 0
     QLocalServer.removeServer(name)
     server = QLocalServer()
-    server.listen(name)
+    if sys.platform != "win32":
+        # the socket file readable and writable by the user only
+        server.setSocketOptions(QLocalServer.SocketOption.UserAccessOption)
+    if not server.listen(name):
+        # it still starts: only a second start will not find this one
+        _log(folder, f"single instance: cannot listen on {name}: {server.errorString()}")
 
     from activitytrack.policy import stored
     from activitytrack.session import Session
@@ -161,9 +187,16 @@ def main(argv=None):
     notifier = Notifier()
     window = MainWindow(session, service, actions, notifier)
 
+    quitting = []
+
     def quit_app():
+        # once: the window's close and the tray's menu may both ask
+        if quitting:
+            return
+        quitting.append(True)
         window.quitting = True
-        service.stop()
+        if not service.stop():
+            _log(folder, "quit: the sync did not stop in time, left to the end of the process")
         app.quit()
 
     # logging out of the desktop session closes the windows: the window must not refuse
@@ -172,6 +205,7 @@ def main(argv=None):
     def on_connection():
         c = server.nextPendingConnection()
         c.readyRead.connect(window.show_up)
+        c.disconnected.connect(c.deleteLater)
 
     server.newConnection.connect(on_connection)
 
@@ -184,7 +218,12 @@ def main(argv=None):
         tray = None
         QMessageBox.information(None, "ActivityTrack", _(
             "Il desktop non ha un'area di notifica: ActivityTrack resta aperto in una finestra."))
-        window.closeEvent = lambda e: (e.accept(), quit_app() if not window.quitting else None)
+
+        def close_event(event):
+            # without a tray icon closing the window is quitting
+            event.accept()
+            quit_app()
+        window.closeEvent = close_event
     if not args.hidden or tray is None or session.account is None:
         window.show_up()
     from .general import first_start
@@ -192,7 +231,10 @@ def main(argv=None):
     reminders = Reminders(actions, notifier, window.show_up)
     reminders.arm()
     service.start()
-    return app.exec()
+    code = app.exec()
+    # the socket's file goes: the process may end without deleting the server
+    server.close()
+    return code
 
 
 if __name__ == "__main__":

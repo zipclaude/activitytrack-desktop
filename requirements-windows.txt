@@ -2,7 +2,8 @@
 # the versions of Debian 13 where Windows wheels exist.
 PyQt6==6.9.0
 PyQt6-Qt6==6.9.0
-cryptography==43.0.0
+# Debian's 43.0.0 with the fixes of its 43.x series (same API, wheels for Windows)
+cryptography==43.0.3
 keyring==25.6.0
 # Windows has no time zone database for zoneinfo
 tzdata==2026.5

@@ -3,12 +3,15 @@
 
 import os
 import tempfile
+import threading
+import time
 import unittest
+from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import QSettings  # noqa: E402
-from PyQt6.QtWidgets import QApplication  # noqa: E402
+from PyQt6.QtWidgets import QApplication, QDialogButtonBox, QToolButton  # noqa: E402
 
 from activitytrack import wire  # noqa: E402
 from activitytrack.texts import sync_needs_attention as needs_attention, sync_state as state_text  # noqa: E402
@@ -161,6 +164,45 @@ class UiTest(unittest.TestCase):
         w.quitting = True
         self.assertTrue(w.close())
 
+    def test_the_postpone_says_the_minutes_it_postpones(self):
+        from datetime import date
+
+        from activitytrack_desktop.home import Actions, TodoRow
+        self.pair()
+        actions = Actions(self.session)
+        uid = actions.todos.save(None, "Backup", plan_date=date.today(), plan_min=23 * 60, duration_min=30)
+        # the user's own snooze (Promemoria), not the policy's default
+        QSettings().setValue("reminders/planSnoozeMin", 25)
+        try:
+            t = self.session.store.get("todo", uid)
+            row = TodoRow(actions, t, "planned")
+            more = row.findChildren(QToolButton)[0]
+            self.assertIn("Posticipa di 25 min", self.menu_texts(more.menu()))
+            self.assertEqual(actions.snooze_min(), 25)
+        finally:
+            QSettings().remove("reminders")
+
+    def test_cancel_waits_for_the_pairing(self):
+        from activitytrack_desktop.ui import PairDialog
+        d = PairDialog(self.session)
+        d.link.setText("activitytrack://pair?v=1&u=https%3A%2F%2Fat.example.com&c=x")
+        started = []
+        with mock.patch("activitytrack_desktop.ui.threading.Thread") as thread, \
+                mock.patch("activitytrack.pairing.PairLink.parse", return_value=mock.Mock(server="at.example.com")):
+            thread.return_value.start = lambda: started.append(True)
+            d._pair()
+        self.assertEqual(started, [True])
+        cancel = d.buttons.button(QDialogButtonBox.StandardButton.Cancel)
+        self.assertFalse(cancel.isEnabled())
+        # the server already has the code: Esc does not close the dialog
+        d.show()
+        d.reject()
+        self.assertTrue(d.isVisible())
+        d._paired(None, "expired")
+        self.assertTrue(cancel.isEnabled())
+        d.reject()
+        self.assertFalse(d.isVisible())
+
     def test_icons(self):
         for state in (icons.IDLE, icons.WORK, icons.PAUSE, icons.TRAVEL):
             self.assertFalse(icons.icon(state, alert=True).isNull())
@@ -229,7 +271,70 @@ class RemindersUiTest(unittest.TestCase):
         self.assertTrue(r.timer.isActive())
 
 
+class StopTest(unittest.TestCase):
+    def test_a_blocked_sync_does_not_hold_the_quit(self):
+        from activitytrack_desktop import service as S
+        release = threading.Event()
+
+        class Blocked:
+            def __init__(self, session):
+                pass
+
+            def run(self, full):
+                release.wait(30)
+                return ("ok", "")
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(S, "Runner", Blocked):
+            session = Session(d, use_keyring=False)
+            service = S.SyncService(session)
+            service.busy = True
+            service._run.emit(True)
+            time.sleep(0.2)
+            t = time.monotonic()
+            self.assertFalse(service.stop(wait_ms=300))
+            self.assertLess(time.monotonic() - t, 2)
+            # the thread, still running, outlives the service's wrapper without an abort
+            thread = service._thread
+            del service
+            release.set()
+            self.assertTrue(thread.wait(5000))
+            session.store.close()
+
+    def test_an_idle_service_stops(self):
+        from activitytrack_desktop.service import SyncService
+        with tempfile.TemporaryDirectory() as d:
+            session = Session(d, use_keyring=False)
+            self.assertTrue(SyncService(session).stop())
+            session.store.close()
+
+
 class GeneralUiTest(unittest.TestCase):
+    def test_only_githubs_pages_are_opened(self):
+        from activitytrack import updates
+        from activitytrack_desktop.general import release_page
+        good = updates.Release("0.9.5", "https://github.com/zipclaude/activitytrack-desktop/releases/tag/v0.9.5", False)
+        self.assertEqual(release_page(good), good.url)
+        for url in ("https://evil.example.com/x", "https://github.com.evil.example.com/x", "javascript:alert(1)",
+                    "http://github.com/x", ""):
+            self.assertEqual(release_page(updates.Release("0.9.5", url, False)),
+                             f"https://github.com/{updates.REPOSITORY}/releases")
+
+    def test_the_link_is_escaped(self):
+        from activitytrack import updates
+        from activitytrack_desktop.general import GeneralPanel
+        from activitytrack_desktop.home import Actions
+        from PyQt6.QtCore import QObject, pyqtSignal
+
+        class Updater(QObject):
+            found = pyqtSignal(object)
+            error = ""
+        with tempfile.TemporaryDirectory() as d:
+            session = Session(d, use_keyring=False)
+            p = GeneralPanel(Actions(session), Updater())
+            p._found(updates.Release('1.0"><img src=x>', 'https://github.com/a"onclick="x', False))
+            self.assertNotIn("<img", p.result.text())
+            self.assertIn('href="https://github.com/a&quot;onclick=&quot;x"', p.result.text())
+            session.store.close()
+
     def test_update_settings_and_the_policy(self):
         from activitytrack_desktop import __version__
         from activitytrack_desktop.general import update_settings
