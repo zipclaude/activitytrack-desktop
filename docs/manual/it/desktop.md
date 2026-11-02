@@ -28,7 +28,7 @@ Dalla pagina delle release
 - **Debian 13 e 14, Ubuntu 24.04 e 26.04**: il pacchetto della propria
   distribuzione insieme a quello della libreria (dalla sua pagina,
   <https://github.com/zipclaude/python3-activitytrack/releases>), installati con
-  `sudo apt install ./python3-activitytrack_<versione>-<distro>_all.deb ./activitytrack-desktop_<versione>-<distro>_all.deb`.
+  `sudo apt install ./python3-activitytrack_<versione>-1-<distro>_all.deb ./activitytrack-desktop_<versione>-1-<distro>_all.deb`.
   ActivityTrack compare nel menu delle applicazioni.
 - **Altre distribuzioni Linux**: servono Python 3.11 o più recente, PyQt6,
   cryptography e keyring dai pacchetti della distribuzione, e la libreria
