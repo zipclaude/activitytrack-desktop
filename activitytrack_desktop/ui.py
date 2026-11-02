@@ -25,6 +25,7 @@ class PairDialog(QDialog):
         super().__init__(parent)
         self.session = session
         self.account = None
+        self.busy = False
         self.setWindowTitle(_("Associa a un server"))
         self.setMinimumWidth(520)
         lay = QVBoxLayout(self)
@@ -55,7 +56,10 @@ class PairDialog(QDialog):
         except pairing.PairError as e:
             self._error(e.code)
             return
+        # the server spends the code at the request: a cancel could no longer undo the pairing
+        self.busy = True
         self.ok.setEnabled(False)
+        self.buttons.button(QDialogButtonBox.StandardButton.Cancel).setEnabled(False)
         self.message.setStyleSheet("")
         self.message.setText(_("Associazione con %s…") % link.server)
         self.message.show()
@@ -65,10 +69,20 @@ class PairDialog(QDialog):
                 self._signal.done.emit(self.session.pair(link), None)
             except pairing.PairError as e:
                 self._signal.done.emit(None, e.code)
+            except Exception as e:
+                # the keyring, the disk: the dialog, waiting, must hear the end anyway
+                self._signal.done.emit(None, str(e) or type(e).__name__)
         threading.Thread(target=work, daemon=True).start()
 
+    def reject(self):
+        # Esc and the window's close too wait for the server's answer
+        if not self.busy:
+            super().reject()
+
     def _paired(self, account, error):
+        self.busy = False
         self.ok.setEnabled(True)
+        self.buttons.button(QDialogButtonBox.StandardButton.Cancel).setEnabled(True)
         if error:
             self._error(error)
             return

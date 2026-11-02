@@ -139,9 +139,13 @@ class Actions(QObject):
 
     def todo_postpone(self, uid):
         """Later by the user's snooze (Promemoria), within the policy."""
+        self._do(self.todos.postpone, uid, self.snooze_min())
+
+    def snooze_min(self):
+        """The minutes of a postpone: the user's (Promemoria) within the policy, the menus' and the reminders'."""
         from .reminder_ui import local_intervals
         from activitytrack.reminders import config_of
-        self._do(self.todos.postpone, uid, config_of(self.work.policy, local_intervals())["planSnoozeMin"])
+        return config_of(self.work.policy, local_intervals())["planSnoozeMin"]
 
     def reopen_entry(self, uid):
         self._do(self.work.command, uid, REOPEN)
@@ -250,8 +254,7 @@ class TodoRow(QFrame):
         more = QToolButton(text="⋯", popupMode=QToolButton.ToolButtonPopupMode.InstantPopup)
         menu = QMenu(more)
         if st not in ("done", "ignored") and t.get("planDate") and policy.feature("planning"):
-            minutes = policy.setting("planSnoozeMin", 15)
-            menu.addAction(_("Posticipa di %d min") % minutes, lambda: actions.todo_postpone(uid))
+            menu.addAction(_("Posticipa di %d min") % actions.snooze_min(), lambda: actions.todo_postpone(uid))
         if st not in ("done", "ignored") and policy.feature("ignoreTodos"):
             menu.addAction(_("Ignora"), lambda: actions.todo_ignore(uid))
         menu.addAction(_("Modifica…"), lambda: actions.edit_todo(uid))

@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Settings → Generale: starting with the session and the update check (docs/DESIGN.md §6.3)."""
 
+import html
 import sys
 import threading
 import time
 
-from PyQt6.QtCore import QObject, QSettings, QTimer, QUrl, pyqtSignal as Signal
+from PyQt6.QtCore import QObject, QSettings, Qt, QTimer, QUrl, pyqtSignal as Signal
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
     QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
@@ -17,6 +18,15 @@ from activitytrack.i18n import _
 from . import __version__, autostart
 
 CHECK_EVERY_MS = 3600_000
+# the releases' pages: any other address in GitHub's answer is not opened
+RELEASES_SITE = "https://github.com/"
+
+
+def release_page(release):
+    """The page of [release], or the project's releases when GitHub's answer points elsewhere."""
+    if release.url.startswith(RELEASES_SITE):
+        return release.url
+    return f"{RELEASES_SITE}{updates.REPOSITORY}/releases"
 
 
 def first_start():
@@ -92,7 +102,7 @@ class Updates(QObject):
 
     def _answer(self, key, action):
         if key.startswith("update|") and self.latest is not None:
-            QDesktopServices.openUrl(QUrl(self.latest.url))
+            QDesktopServices.openUrl(QUrl(release_page(self.latest)))
 
 
 class GeneralPanel(QWidget):
@@ -131,7 +141,8 @@ class GeneralPanel(QWidget):
         bl.addWidget(self.betas)
         row = QHBoxLayout()
         self.now = QPushButton(_("Controlla ora"), clicked=self._check_now)
-        self.result = QLabel(openExternalLinks=True)
+        # rich text, always: what comes from outside is escaped
+        self.result = QLabel(openExternalLinks=True, textFormat=Qt.TextFormat.RichText)
         row.addWidget(self.now)
         row.addWidget(self.result, 1)
         bl.addLayout(row)
@@ -167,7 +178,7 @@ class GeneralPanel(QWidget):
         try:
             autostart.set_enabled(on)
         except OSError as e:
-            self.result.setText(str(e))
+            self.result.setText(html.escape(str(e)))
         self.refresh()
 
     def _check_now(self):
@@ -176,8 +187,9 @@ class GeneralPanel(QWidget):
 
     def _found(self, release):
         if self.updater.error:
-            self.result.setText(_("GitHub non raggiungibile: %s") % self.updater.error)
+            self.result.setText(html.escape(_("GitHub non raggiungibile: %s") % self.updater.error))
         elif release is None:
             self.result.setText(_("Hai l'ultima versione."))
         else:
-            self.result.setText(f'<a href="{release.url}">' + _("Scarica la %s") % release.version + "</a>")
+            self.result.setText(f'<a href="{html.escape(release_page(release))}">'
+                                + html.escape(_("Scarica la %s") % release.version) + "</a>")

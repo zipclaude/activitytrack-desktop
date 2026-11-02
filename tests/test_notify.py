@@ -47,3 +47,17 @@ class NotifyTest(unittest.TestCase):
         sent = json.loads(self.log.read_text().splitlines()[0])
         self.assertEqual(sent["actions"], ["yes", "Sì", "pause", "Pausa", "default", "Apri"])
         self.assertEqual(sent["summary"], "Ancora su Acme?")
+
+    def test_the_default_action_in_the_interfaces_language(self):
+        import activitytrack_desktop
+        from activitytrack import i18n
+        from activitytrack_desktop.notify import Notifier
+        i18n.add_catalogs(Path(activitytrack_desktop.__file__).with_name("locale"))
+        i18n.set_language("en")
+        try:
+            Notifier().show("update|1.0", "ActivityTrack 1.0", "", [("open", "Download")], persistent=False)
+        finally:
+            i18n.set_language("it")
+        # written by the server before its reply
+        sent = json.loads(self.log.read_text().splitlines()[0])
+        self.assertEqual(sent["actions"], ["open", "Download", "default", "Open"])

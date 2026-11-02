@@ -8,6 +8,7 @@ worker thread; the interface hears the outcome through signals.
 
 import time
 
+from PyQt6 import sip
 from PyQt6.QtCore import QObject, QThread, QTimer, pyqtSignal as Signal, pyqtSlot as Slot
 
 from activitytrack.sync import Runner
@@ -18,6 +19,8 @@ DEBOUNCE_MS = 3_000
 WATCH_MS = 2_000
 # a wall-clock jump this much larger than the tick means the PC slept
 SLEEP_GAP_S = 90
+# how long quitting waits for a sync running: the window must not freeze
+STOP_WAIT_MS = 2_000
 
 
 class _Worker(QObject):
@@ -69,11 +72,19 @@ class SyncService(QObject):
         self._watch.start()
         self.sync(full=True)
 
-    def stop(self):
+    def stop(self, wait_ms=STOP_WAIT_MS):
+        """False when a sync still runs after [wait_ms]: it is left to the end of the process."""
         self._tick.stop()
         self._watch.stop()
+        self._debounce.stop()
         self._thread.quit()
-        self._thread.wait(10_000)
+        if self._thread.wait(wait_ms):
+            return True
+        # Qt aborts the process when a running QThread is destroyed: the thread and its worker
+        # pass to C++, which never deletes them
+        sip.transferto(self._thread, None)
+        sip.transferto(self._worker, None)
+        return False
 
     def changed_here(self):
         """A local change: pushed in a few seconds, several changes together."""

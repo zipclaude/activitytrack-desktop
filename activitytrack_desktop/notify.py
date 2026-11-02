@@ -8,6 +8,8 @@ buttons: a click opens the same question in a window.
 
 from PyQt6.QtCore import QMetaType, QObject, pyqtSignal as Signal, pyqtSlot as Slot
 
+from activitytrack.i18n import _
+
 try:
     from PyQt6.QtDBus import QDBusArgument, QDBusConnection, QDBusInterface, QDBusMessage
 except ImportError:
@@ -78,7 +80,7 @@ class Notifier(QObject):
             flat = []
             for action_id, label in actions if self.buttons else ():
                 flat += [action_id, label]
-            flat += [DEFAULT, "Apri"]
+            flat += [DEFAULT, _("Apri")]
             replaces = QDBusArgument(self._ids.get(key, 0), QMetaType.Type.UInt.value)
             # the specification's types: a Python list would travel as "av", not "as"
             flat = QDBusArgument(flat, QMetaType.Type.QStringList.value)
