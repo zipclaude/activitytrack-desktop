@@ -10,7 +10,8 @@ from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import QSettings  # noqa: E402
+from PyQt6.QtCore import QSettings, Qt  # noqa: E402
+from PyQt6.QtGui import QColor, QPalette  # noqa: E402
 from PyQt6.QtWidgets import QApplication, QDialogButtonBox, QToolButton  # noqa: E402
 
 from activitytrack import wire  # noqa: E402
@@ -102,7 +103,7 @@ class UiTest(unittest.TestCase):
 
     def test_the_home_and_the_quick_entry(self):
         from activitytrack_desktop import forms
-        from activitytrack_desktop.home import Actions, Card, Home
+        from activitytrack_desktop.home import Actions, BigCard, Home
         self.pair()
         actions = Actions(self.session)
         home = Home(actions)
@@ -116,8 +117,9 @@ class UiTest(unittest.TestCase):
         self.assertEqual((e["activity"], e["tags"]), ("Configurazione rete", ["urgente", "rete"]))
         self.assertEqual(self.session.store.get("client", e["clientUid"])["name"], "Comune di Valdora")
         home.refresh()
-        cards = home.scroll.widget().findChildren(Card)
+        cards = home.scroll.widget().findChildren(BigCard)
         self.assertEqual(len(cards), 1)
+        self.assertEqual(home.big_uid, d.result_uid)
         # a refused start says why and stays open
         d = forms.QuickEntry(actions.work)
         d.confirm()
@@ -152,6 +154,153 @@ class UiTest(unittest.TestCase):
         # shown again with the done ones in the filter
         home.filters.show_actions["DONE"].setChecked(True)
         self.assertEqual(len(home.scroll.widget().findChildren(TodoRow)), 1)
+
+    def sample(self, actions):
+        """A client with a company colour, a tag; at work, suspended, stopped and to-dos."""
+        from datetime import date
+
+        from activitytrack.work import SUSPEND, StartRequest
+        store = self.session.store
+        store.pulled({"type": "company", "uid": "co", "rev": 1, "fields": {"name": "Alfa", "color": 0x3D7BEA}})
+        store.pulled({"type": "client", "uid": "c1", "rev": 1, "fields": {"name": "Biblioteca", "companyUid": "co"}})
+        store.pulled({"type": "tag", "uid": "tg", "rev": 1, "fields": {"name": "rete", "color": 0x00A3A3}})
+        w = actions.work
+        now = w.clock()
+        old = w.start(StartRequest(client="c1", activity="", start_ms=now - 200 * 60_000, end_ms=now - 150 * 60_000))
+        b = w.start(StartRequest(client="c1", activity="Stampanti", start_ms=now - 120 * 60_000))
+        w.command(b, SUSPEND, at=now - 100 * 60_000)
+        a = w.start(StartRequest(client="c1", activity="Rete", tags=["rete"], start_ms=now - 60 * 60_000))
+        actions.todos.save(None, "Backup", plan_date=date.today(), plan_min=23 * 60, duration_min=30)
+        actions.todos.save(None, "Inventario")
+        return a, b, old
+
+    def test_the_home_light_and_dark(self):
+        from activitytrack_desktop import theme
+        from activitytrack_desktop.home import Actions, BigCard, EntryRow, Home, SmallCard, TodoRow
+        self.pair()
+        actions = Actions(self.session)
+        a, b, old = self.sample(actions)
+        try:
+            for dark in (False, True):
+                theme.install(dark=dark)
+                self.assertEqual(theme.tokens().dark, dark)
+                self.assertEqual(QApplication.instance().palette().color(QPalette.ColorRole.Window).name(),
+                                 theme.tokens().bg)
+                home = Home(actions)
+                home.resize(800, 900)
+                body = home.scroll.widget()
+                big = body.findChildren(BigCard)
+                self.assertEqual([c.uid for c in big], [a])
+                self.assertEqual(big[0].band, "#3d7bea")
+                self.assertEqual(set(big[0].commands), {"PAUSE", "TRAVEL", "SUSPEND", "STOP"})
+                self.assertEqual([c.uid for c in body.findChildren(SmallCard)], [b])
+                self.assertEqual([r.uid for r in body.findChildren(EntryRow)], [old])
+                self.assertEqual(len(body.findChildren(TodoRow)), 2)
+                self.assertFalse(home.grab().isNull())
+                # a small card brought to the big one
+                home.select(b)
+                self.assertEqual([c.uid for c in home.scroll.widget().findChildren(BigCard)], [b])
+                self.assertEqual(home.big_uid, b)
+                # the search narrows the list, not the cards
+                home.filters.search.setText("inventario")
+                self.assertEqual([r.title.text() for r in body.findChildren(TodoRow)], ["Inventario"])
+                self.assertEqual(body.findChildren(EntryRow), [])
+                home.filters.search.clear()
+        finally:
+            theme.install(dark=False)
+
+    def test_the_window_keys(self):
+        from PyQt6.QtGui import QKeySequence
+
+        from activitytrack_desktop import widgets
+        from activitytrack_desktop.home import Actions
+        from activitytrack_desktop.ui import MainWindow
+        self.pair()
+        actions = Actions(self.session)
+        a, b, _old = self.sample(actions)
+        w = MainWindow(self.session, self.service, actions)
+        keys = {name: act.shortcut().toString() for name, act in w.shortcuts.items()}
+        self.assertEqual(keys, {"new_entry": "Ctrl+N", "pause": "Ctrl+P", "stop": "Ctrl+T", "new_todo": "Ctrl+D",
+                                "find": "Ctrl+F", "sync": "F5", "section1": "Ctrl+1", "section2": "Ctrl+2",
+                                "section3": "Ctrl+3"})
+        for act in w.shortcuts.values():
+            self.assertIn(act, w.actions())
+            self.assertEqual(act.shortcutContext(), Qt.ShortcutContext.WindowShortcut)
+        # shown in the tooltips
+        self.assertIn("Ctrl+N", w.home.new.toolTip())
+        self.assertIn("Ctrl+2", w.rail.items["todos"].toolTip())
+        self.assertIn(QKeySequence("F5").toString(), w.sync_item.toolTip())
+        # the sections
+        w.shortcuts["section2"].trigger()
+        self.assertEqual(w.current_section(), "todos")
+        w.shortcuts["section3"].trigger()
+        self.assertEqual(w.current_section(), "settings")
+        w.shortcuts["section1"].trigger()
+        self.assertEqual(w.current_section(), "home")
+        # the dialogs and the sync, each its action
+        with mock.patch.object(actions, "new_entry") as new, mock.patch.object(actions, "new_todo") as todo, \
+                mock.patch.object(self.service, "sync") as sync, mock.patch.object(w.home, "focus_search") as find:
+            w.shortcuts["new_entry"].trigger()
+            w.shortcuts["new_todo"].trigger()
+            w.shortcuts["sync"].trigger()
+            w.shortcuts["find"].trigger()
+        new.assert_called_once_with()
+        todo.assert_called_once_with()
+        sync.assert_called_once_with(full=True)
+        find.assert_called_once_with()
+        # pause the one at work, then resume it
+        store = self.session.store
+        w.shortcuts["pause"].trigger()
+        self.assertEqual(store.get("entry", a)["mode"], "PAUSE")
+        w.shortcuts["pause"].trigger()
+        self.assertEqual(store.get("entry", a)["mode"], "WORK")
+        # stop: the big card's (description and client: closed at once, no sheet)
+        w.home.select(b)
+        w.shortcuts["stop"].trigger()
+        self.assertEqual(store.get("entry", b)["status"], "CLOSED")
+        self.assertEqual(store.get("entry", a)["status"], "ACTIVE")
+        # two at work: the user chooses in the small list
+        from activitytrack.work import StartRequest
+        c = actions.work.start(StartRequest(client="c1", activity="Terza"))
+        with mock.patch.object(widgets, "choose", return_value=a) as choose:
+            w.shortcuts["pause"].trigger()
+        self.assertEqual([uid for uid, _t in choose.call_args[0][2]], [c, a])
+        self.assertEqual(store.get("entry", a)["mode"], "PAUSE")
+        self.assertEqual(store.get("entry", c)["mode"], "WORK")
+        # a stop that leaves details missing opens the stop sheet
+        d = actions.work.start(StartRequest(client="c1", activity=""))
+        w.home.select(d)
+        with mock.patch("activitytrack_desktop.forms.StopDialog") as sheet:
+            w.shortcuts["stop"].trigger()
+        sheet.assert_called_once()
+        self.assertEqual(store.get("entry", d)["status"], "TO_COMPLETE")
+
+    def test_the_theme_follows_the_system(self):
+        from activitytrack_desktop import theme
+        app = QApplication.instance()
+        st = theme.notifier()
+        saved = st.system_palette
+        hints = app.styleHints()
+        try:
+            # Qt 6.4 (Ubuntu 24.04), or a system that does not tell: the palette's lightness
+            with mock.patch.object(type(hints), "colorScheme", create=True, new=None):
+                st.system_palette = QPalette(QColor("#202020"))
+                self.assertTrue(theme.system_dark(app))
+                st.system_palette = QPalette(QColor("#f0f0f0"))
+                self.assertFalse(theme.system_dark(app))
+            if hasattr(Qt, "ColorScheme"):
+                # Qt ≥ 6.5: the scheme first
+                with mock.patch.object(type(hints), "colorScheme", lambda _self: Qt.ColorScheme.Dark):
+                    self.assertTrue(theme.system_dark(app))
+        finally:
+            st.system_palette = saved
+
+    def test_the_icons_are_drawn(self):
+        from PyQt6.QtCore import QRectF
+        for name in list(icons.PATHS) + ["suspend", "more"]:
+            r = icons.shape(name).boundingRect()
+            self.assertTrue(QRectF(-0.5, -0.5, 25, 25).contains(r), name)
+            self.assertGreater(r.width() * r.height(), 20, name)
 
     def test_closing_hides_quitting_closes(self):
         from activitytrack_desktop.ui import MainWindow

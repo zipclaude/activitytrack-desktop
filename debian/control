@@ -12,7 +12,9 @@ Architecture: all
 Depends: ${misc:Depends},
  python3 (>= 3.11),
  python3-activitytrack (>= 0.9.4~beta5),
+ python3-jeepney,
  python3-pyqt6,
+ python3-xlib,
  qt6-qpa-plugins
 Recommends: qt6-translations-l10n, qt6-wayland
 Description: tray application of ActivityTrack for the PC

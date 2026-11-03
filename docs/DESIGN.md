@@ -192,16 +192,105 @@ A small window, keyboard first (Enter confirms, Esc closes):
 
 ### 6.3 Main window
 
-- **Home**: the running activities with their commands, then the list of
-  to-dos and stopped activities with the filters period, state, company,
-  tag (as `web/homelist.py`).
+A navigation rail on the left, as the web's, with the sections of
+`ui.SECTIONS` (Home, Da fare, Impostazioni; Ctrl+1… in that order) and
+"Sincronizza" at the bottom; each section's page has its name and buttons on
+top and a scrolling column, at most 920 px wide.
+
+- **Home** (`home.py`), as the phone's `HomeScreen.kt`: the **big card** of
+  the latest activity (the most recent start or end; a small card clicked
+  takes its place): company, client, description, the state pill with its
+  time, the totals, the running stretch's time, the tag dots, the round
+  commands with their names under them. Then the **small cards** of the
+  other activities running or suspended (one line, state, times, a round
+  resume or pause button). Without an activity the big card has Avvia and
+  Viaggio. Then the filters (period, state, company, tag as chips with
+  menus; a search) and the list of to-dos and stopped activities in
+  sections (`todos.home`, as `web/homelist.py`), each row with its state
+  mark (overdue, planned, open, details missing, closed, done, ignored).
+- **Da fare** (`todos_ui.py`): every to-do in the same sections, the done
+  and the ignored on request, by company, with the search.
 - **Activity form**: every field the policy shows; segments when
   `editableTimes`; expenses later.
 - **To-do form**: title, notes, company/client, due date, plan (date,
   time, duration), priority.
-- **Settings**: server and pairing, reminders (each on/off, intervals
-  within the policy), autostart, language, updates (GitHub check as the
-  app, §12.4), "Non sincronizzati".
+- **Impostazioni**: Sincronizzazione (server and pairing, "Non
+  sincronizzati"), Promemoria (each on/off, intervals within the policy),
+  Generale (autostart, date and time formats, updates: GitHub check as the
+  app, §12.4), as chips over their pages.
+
+### 6.4 Look
+
+The app's Material 3 (`theme.py`, `widgets.py`), the same design as the
+web's `app.css`:
+
+- **Fusion** style everywhere (KDE, XFCE, GNOME, Windows look alike), the
+  palette and one application style sheet from the tokens: neutral pages
+  (white and greys, or near-black and dark greys), the tonal palette of the
+  launcher green #1F5C4A on the rail (#1F5C4A, dark #173F34), the buttons
+  (filled, tonal, outlined, as pills) and what is selected.
+- **Light or dark as the system**: `QStyleHints.colorScheme` (Qt ≥ 6.5,
+  followed while running); on Qt 6.4 (Ubuntu 24.04) the lightness of the
+  palette the system gave at the start.
+- The activities keep the app's colours (`CommandButtons.kt`): work green
+  #2E7D32, pause amber #F9A825 (dark icon), travel blue #1565C0, suspend
+  orange #EF6C00, stop red #C62828. The company's colour (else the
+  client's) is a band on the start edge of cards and rows; the tags'
+  colours are dots at the top right.
+- Painted widgets, no image files and no icon font: the cards, the round
+  command buttons, the state pill, the list marks, the tag dots, the rail.
+  The icons are the app's Material icons (Apache-2.0) as SVG path data
+  (`icons.PATHS`), painted in any colour; the drop-down arrows are drawn
+  into a temporary folder, as a style sheet takes them as files only.
+- The text never smaller than 10 pt (Material's body); the dialogs have
+  their name on top and, in the quick entry and the stop sheet, the
+  fields' names above the fields, as the phone's screens.
+
+### 6.5 Keys
+
+While the window has the focus (`QAction`s of the window, shown in the
+tooltips): Ctrl+N new activity (quick entry), Ctrl+P pause/resume, Ctrl+T
+stop (the stop sheet when details are missing), Ctrl+D new to-do, Ctrl+F the
+search of the list shown, Ctrl+1/2/3 the sections, F5 sync; Ctrl+Enter
+confirms a form.
+
+The activity a key acts on comes from `targets.py`, without Qt, for the
+global shortcuts too (§10, phase 6):
+
+- `pause_target(work)`: the activity at work or travelling;
+- `resume_target(work)`: the paused one, else the latest suspended;
+- `pause_or_resume(work)`: `(PAUSE, target)` when something is at work,
+  else `(WORK, target)`, else `(None, None)`;
+- `stop_target(work, focused_uid=None)`: the big card's while it runs,
+  else the active one, else the suspended one;
+- `running(work)`: the Home's order of the cards (the first is big).
+
+Each returns an entry uid, None, or a list of uids, the latest first, when
+it is the user's choice (two at work with concurrent activities): the
+window shows them in a small list (`widgets.choose`), Enter takes the first.
+
+### 6.6 Agenda and Report (later)
+
+Two more sections of the rail, between Da fare and Impostazioni: an entry
+in `ui.SECTIONS` each (key, name, icon `agenda` / `report`, the function
+that builds the page), nothing else to change in the window; Ctrl+3 and
+Ctrl+4 move to them and Impostazioni becomes Ctrl+5.
+
+- **Agenda** (`agenda_ui.py`), as the web's agenda and the app's: day,
+  week and month with ‹ › and "Oggi"; day and week a painted timeline
+  (hours on the left, a column per day, blocks of the activities in the
+  company's colour, running ones striped, planned to-dos outlined, the
+  red line of now, the zoom); month a grid of days with the tag dots and
+  the hours worked. A click on a block opens the activity or the to-do;
+  a drag on empty space plans a to-do there (`Actions.new_todo(plan=…)`
+  already takes it). The lanes of overlapping blocks and the totals come
+  from the library (as `web/agenda.py`), so that the cli and the tui can
+  use them.
+- **Report** (`report_ui.py`): the period (day, week, month, custom), by
+  company, client and tag, the totals of work, travel and pause per day
+  and per client as the app's report (rounding as the policy says), with
+  the export to CSV; the sums in the library (as `web/report.py`).
+  Charts painted with QPainter (bars per day), no new dependency.
 
 Languages: it, en, de, es (Qt `.ts` files, the app's strings as source).
 
@@ -276,7 +365,8 @@ from the other at the next sync, where the answer is a synced change
 5. **Finish**: settings, languages, update check, autostart, manual,
    the Windows installer (D8), release 1.0 together with app and web (or
    a 0.9.x beta first).
-6. **Later**: global shortcut (D7), attachments, other packages.
+6. **Later**: global shortcut (D7, on `targets.py`), Agenda and Report
+   (§6.6), attachments, other packages.
 
 ## 11. Open points
 

@@ -4,16 +4,16 @@
 import threading
 
 from PyQt6.QtCore import QObject, Qt, QTimer, pyqtSignal as Signal
-from PyQt6.QtGui import QGuiApplication, QIcon
+from PyQt6.QtGui import QAction, QGuiApplication, QIcon, QKeySequence
 from PyQt6.QtWidgets import (
-    QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
-    QPushButton, QSystemTrayIcon, QTabWidget, QVBoxLayout, QWidget,
+    QApplication, QButtonGroup, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
+    QMenu, QMessageBox, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget,
 )
 
 from activitytrack import pairing, texts
 from activitytrack.i18n import _
 
-from . import __version__, icons
+from . import __version__, icons, theme, widgets as W
 
 
 class _Pairing(QObject):
@@ -38,12 +38,12 @@ class PairDialog(QDialog):
         if clip.startswith("activitytrack://pair"):
             self.link.setText(clip)
         lay.addWidget(self.link)
-        self.message = QLabel(wordWrap=True)
-        self.message.setStyleSheet("color: #c62828")
+        self.message = W.label(kind="error", wrap=True)
         self.message.hide()
         lay.addWidget(self.message)
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
         self.ok = self.buttons.addButton(_("Associa"), QDialogButtonBox.ButtonRole.AcceptRole)
+        self.ok.setProperty("role", "primary")
         self.buttons.accepted.connect(self._pair)
         self.buttons.rejected.connect(self.reject)
         lay.addWidget(self.buttons)
@@ -60,7 +60,7 @@ class PairDialog(QDialog):
         self.busy = True
         self.ok.setEnabled(False)
         self.buttons.button(QDialogButtonBox.StandardButton.Cancel).setEnabled(False)
-        self.message.setStyleSheet("")
+        W.role(self.message, "")
         self.message.setText(_("Associazione con %s…") % link.server)
         self.message.show()
 
@@ -90,7 +90,7 @@ class PairDialog(QDialog):
         self.accept()
 
     def _error(self, code):
-        self.message.setStyleSheet("color: #c62828")
+        W.role(self.message, "error")
         self.message.setText(texts.pair_error(code))
         self.message.show()
 
@@ -102,37 +102,42 @@ class SyncPanel(QWidget):
         super().__init__(parent)
         self.session, self.service = session, service
         lay = QVBoxLayout(self)
-        title = QLabel(_("Sincronizzazione"))
-        title.setStyleSheet("font-size: 18pt")
-        lay.addWidget(title)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(12)
+        card = W.Surface(None, 16)
+        inner = QVBoxLayout(card)
+        inner.setContentsMargins(20, 16, 20, 16)
         self.form = QFormLayout()
+        self.form.setHorizontalSpacing(20)
+        self.form.setVerticalSpacing(8)
         self.values = {}
         for key, label in (("server", _("Server")), ("user", _("Utente")), ("org", _("Organizzazione")),
                            ("pending", _("Modifiche in attesa di invio"))):
             v = QLabel(textInteractionFlags=Qt.TextInteractionFlag.TextSelectableByMouse)
             self.values[key] = v
-            self.form.addRow(label, v)
-        lay.addLayout(self.form)
+            self.form.addRow(W.label(label, "muted"), v)
+        inner.addLayout(self.form)
         self.status = QLabel(wordWrap=True)
-        lay.addWidget(self.status)
-        self.errors = QLabel(wordWrap=True)
-        self.errors.setStyleSheet("color: #c62828")
-        lay.addWidget(self.errors)
+        self.status.setContentsMargins(0, 8, 0, 0)
+        inner.addWidget(self.status)
+        self.errors = W.label(kind="error", wrap=True)
+        inner.addWidget(self.errors)
         row = QHBoxLayout()
-        self.sync_now = QPushButton(_("Sincronizza ora"), clicked=lambda: self.service.sync(full=True))
-        self.pair = QPushButton(_("Associa a un server…"), clicked=self._pair)
-        self.unpair = QPushButton(_("Dissocia"), clicked=self._unpair)
+        row.setContentsMargins(0, 8, 0, 0)
+        from .home import KEYS
+        self.sync_now = W.button(_("Sincronizza ora"), lambda: self.service.sync(full=True), "primary", "sync",
+                                 W.with_key(_("Sincronizza ora"), KEYS["sync"]))
+        self.pair = W.button(_("Associa a un server…"), self._pair, "tonal", "devices")
+        self.unpair = W.button(_("Dissocia"), self._unpair, "danger")
         for b in (self.sync_now, self.pair, self.unpair):
             row.addWidget(b)
         row.addStretch()
-        lay.addLayout(row)
-        self.secret = QLabel(wordWrap=True)
-        self.secret.setStyleSheet("color: palette(placeholder-text)")
+        inner.addLayout(row)
+        lay.addWidget(card)
+        self.secret = W.label(kind="muted", wrap=True)
         lay.addWidget(self.secret)
         lay.addStretch()
-        version = QLabel(f"ActivityTrack Desktop {__version__}")
-        version.setStyleSheet("color: palette(placeholder-text)")
-        lay.addWidget(version)
+        lay.addWidget(W.label(f"ActivityTrack Desktop {__version__}", "small"))
         service.changed.connect(lambda *_a: self.refresh())
         self.refresh()
 
@@ -172,47 +177,243 @@ class SyncPanel(QWidget):
             self.service.changed.emit("unpaired", "")
 
 
+class Section:
+    """
+    A destination of the rail (docs/DESIGN.md §6.3): its key, name and icon,
+    and how the window builds its page (None when it has nothing to show,
+    e.g. without the activities). Agenda and Report will be two more.
+    """
+
+    def __init__(self, key, text, icon, build, shown=lambda window: True):
+        self.key, self.text, self.icon, self.build, self.shown = key, text, icon, build, shown
+
+
+def _home(window):
+    if window.work_actions is None:
+        return None
+    from .home import Home
+    window.home = Home(window.work_actions, on_pair=lambda: window.show_section("settings", window.panel))
+    return window.home
+
+
+def _todos(window):
+    if window.work_actions is None:
+        return None
+    from .todos_ui import TodosPage
+    window.todos = TodosPage(window.work_actions)
+    return window.todos
+
+
+def _settings(window):
+    window.settings = SettingsPage(window)
+    return window.settings
+
+
+# in the rail's order; Ctrl+1, Ctrl+2… follow it
+SECTIONS = [
+    Section("home", _("Home"), "home", _home),
+    Section("todos", _("Da fare"), "todo", _todos, lambda w: w.work_actions.work.policy.feature("todos")),
+    Section("settings", _("Impostazioni"), "settings", _settings),
+]
+
+
+class SettingsPage(QWidget):
+    """Impostazioni: Sincronizzazione, Promemoria, Generale, as chips over their pages."""
+
+    def __init__(self, window, parent=None):
+        super().__init__(parent)
+        from .home import scroll_page
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 18, 0, 0)
+        head = W.page(_("Impostazioni"))
+        head.setContentsMargins(24, 0, 24, 8)
+        lay.addWidget(head)
+        bar = QHBoxLayout()
+        bar.setContentsMargins(24, 0, 24, 6)
+        bar.setSpacing(8)
+        lay.addLayout(bar)
+        self.stack = QStackedWidget()
+        lay.addWidget(self.stack)
+        self.chips, self.scrolls = {}, {}
+        group = QButtonGroup(self)
+        panels = [(window.panel, _("Sincronizzazione"))]
+        if window.reminders_tab is not None:
+            panels.append((window.reminders_tab, _("Promemoria")))
+        if window.general is not None:
+            panels.append((window.general, _("Generale")))
+        for panel, text in panels:
+            c = W.chip(text, checkable=True)
+            group.addButton(c)
+            c.clicked.connect(lambda _c=False, p=panel: self.show_panel(p))
+            bar.addWidget(c)
+            self.chips[panel] = c
+            column = QWidget()
+            column.setMaximumWidth(720)
+            cl = QVBoxLayout(column)
+            cl.setContentsMargins(0, 0, 0, 0)
+            cl.addWidget(panel)
+            self.scrolls[panel] = scroll_page(column)
+            self.stack.addWidget(self.scrolls[panel])
+        bar.addStretch()
+        self.show_panel(window.panel)
+
+    def show_panel(self, panel):
+        self.chips[panel].setChecked(True)
+        self.stack.setCurrentWidget(self.scrolls[panel])
+
+    def current(self):
+        return next(p for p, c in self.chips.items() if c.isChecked())
+
+
 class MainWindow(QMainWindow):
+    """The window: the rail on the left (SECTIONS), the section's page; the keys of docs/DESIGN.md §6.5."""
+
     def __init__(self, session, service, actions=None, notifier=None):
         super().__init__()
+        theme.install()
+        # not self.actions: QWidget.actions() is the window's QActions
+        self.session, self.service, self.work_actions = session, service, actions
         self.setWindowTitle("ActivityTrack")
         # the installed icon (the app's), else the drawn one
         self.setWindowIcon(QIcon.fromTheme("activitytrack-desktop", icons.icon()))
         self.panel = SyncPanel(session, service)
-        self.tabs = QTabWidget()
-        self.home = None
-        if actions is not None:
-            from .home import Home
-            self.home = Home(actions)
-            self.tabs.addTab(self.home, _("Attività"))
+        self.home = self.todos = None
         self.reminders_tab = None
         if actions is not None and notifier is not None:
             from .reminder_ui import ReminderSettings
             self.reminders_tab = ReminderSettings(actions, notifier)
-            self.tabs.addTab(self.reminders_tab, _("Promemoria"))
             actions.redraw.connect(self.reminders_tab.refresh)
-        self.tabs.addTab(self.panel, _("Sincronizzazione"))
         self.general = None
         if actions is not None and notifier is not None:
             from .general import GeneralPanel, Updates
             self.updater = Updates(actions, notifier, self)
             self.general = GeneralPanel(actions, self.updater)
-            self.tabs.addTab(self.general, _("Generale"))
             actions.redraw.connect(self.general.refresh)
-        self.setCentralWidget(self.tabs)
-        self.resize(640, 560)
+        central = QWidget()
+        lay = QHBoxLayout(central)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        self.rail = W.Rail()
+        self.rail.chosen.connect(self.show_section)
+        lay.addWidget(self.rail)
+        self.stack = QStackedWidget()
+        lay.addWidget(self.stack, 1)
+        self.pages = {}
+        self.sections = []
+        for section in SECTIONS:
+            page = section.build(self)
+            if page is None:
+                continue
+            page.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+            self.pages[section.key] = page
+            self.sections.append(section)
+            self.stack.addWidget(page)
+            self.rail.add(section.key, section.text, section.icon,
+                          W.with_key(section.text, f"Ctrl+{len(self.sections)}"))
+        self.sync_item = self.rail.add_bottom(_("Sincronizza"), "sync", self.sync)
+        self.setCentralWidget(central)
+        self.shortcuts = {}
+        self._keys()
+        self.resize(940, 720)
+        self.setMinimumSize(680, 480)
+        service.changed.connect(lambda *_a: self._sync_state())
+        if actions is not None:
+            actions.changed.connect(self._sections)
+            actions.redraw.connect(self._sections)
+        theme.notifier().changed.connect(lambda: W.recolour(self))
+        self._sections()
+        self._sync_state()
+        self.show_section(self.sections[0].key)
         # set when the application really quits: Qt 6's quit() asks every window to close first
         self.quitting = False
+
+    def _keys(self):
+        """The window's shortcuts, while it has the focus (docs/DESIGN.md §6.5)."""
+        from .home import KEYS
+        a = self.work_actions
+        keys = []
+        if a is not None:
+            keys += [
+                ("new_entry", KEYS["new_entry"], lambda: a.new_entry()),
+                ("pause", KEYS["pause"], a.pause_or_resume),
+                ("stop", KEYS["stop"], lambda: a.stop_current(self.home.big_uid if self.home else None)),
+                ("new_todo", KEYS["new_todo"], lambda: a.new_todo()),
+                ("find", KEYS["find"], self.find),
+            ]
+        keys.append(("sync", KEYS["sync"], self.sync))
+        for i, section in enumerate(self.sections, 1):
+            keys.append((f"section{i}", f"Ctrl+{i}", lambda k=section.key: self.show_section(k)))
+        for name, key, slot in keys:
+            action = QAction(self)
+            action.setShortcut(QKeySequence(key))
+            action.setShortcutContext(Qt.ShortcutContext.WindowShortcut)
+            action.triggered.connect(lambda _c=False, s=slot: s())
+            self.addAction(action)
+            self.shortcuts[name] = action
+
+    def _sections(self):
+        """A section the policy switches off leaves the rail."""
+        for section in self.sections:
+            on = section.shown(self)
+            self.rail.items[section.key].setVisible(on)
+            if not on and self.current_section() == section.key:
+                self.show_section(self.sections[0].key)
+
+    def _sync_state(self):
+        text = texts.sync_state(self.session, self.service.state, self.service.detail)
+        from .home import KEYS
+        self.sync_item.setToolTip(W.with_key(text, KEYS["sync"]))
+        self.sync_item.alert = texts.sync_needs_attention(self.session, self.service.state)
+        self.sync_item.update()
+
+    def sync(self):
+        """F5, and the rail's button: now, or to the pairing when there is no server yet."""
+        if self.session.account is None:
+            self.show_section("settings", self.panel)
+        elif not self.session.store.get_state("revoked"):
+            self.service.sync(full=True)
+
+    def find(self):
+        """Ctrl+F: the search of the list shown, the Home's from elsewhere."""
+        page = self.pages.get(self.current_section())
+        if not hasattr(page, "focus_search"):
+            self.show_section("home")
+            page = self.pages.get("home")
+        if hasattr(page, "focus_search"):
+            page.focus_search()
+
+    @property
+    def focused_uid(self):
+        """The activity of the Home's big card: what the stop shortcuts act on."""
+        return self.home.big_uid if self.home else None
+
+    def show_section(self, key, panel=None):
+        section = next((s for s in self.sections if s.key == key), None)
+        if section is None or not section.shown(self):
+            return
+        self.stack.setCurrentWidget(self.pages[key])
+        self.rail.select(key)
+        # the keys to the page, not a focus ring on its first button
+        self.pages[key].setFocus(Qt.FocusReason.OtherFocusReason)
+        if panel is not None and key == "settings":
+            self.settings.show_panel(panel)
+
+    def current_section(self):
+        page = self.stack.currentWidget()
+        return next((k for k, p in self.pages.items() if p is page), None)
 
     def show_up(self):
         self.panel.refresh()
         if self.home is not None:
             self.home.refresh()
-            if self.panel.session.account is None:
-                self.tabs.setCurrentWidget(self.panel)
+            if self.session.account is None:
+                self.show_section("settings", self.panel)
         self.show()
         self.raise_()
         self.activateWindow()
+        page = self.stack.currentWidget()
+        if page is not None and QApplication.focusWidget() is None:
+            page.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def closeEvent(self, event):
         # closing the window leaves the tray icon: "Esci" quits
