@@ -28,7 +28,7 @@ class TodosPage(QWidget):
         self.new = W.button(_("Nuovo Da fare"), lambda: actions.new_todo(), "primary", "add",
                             W.with_key(_("Nuovo Da fare"), KEYS["new_todo"]))
         head = W.page(_("Da fare"), self.new)
-        head.setContentsMargins(24, 0, 20, 8)
+        head.setContentsMargins(24, 0, 24, 8)
         lay.addWidget(head)
         column = QWidget()
         column.setMaximumWidth(COLUMN)

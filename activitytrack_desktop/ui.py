@@ -226,7 +226,7 @@ class SettingsPage(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 18, 0, 0)
         head = W.page(_("Impostazioni"))
-        head.setContentsMargins(24, 0, 20, 8)
+        head.setContentsMargins(24, 0, 24, 8)
         lay.addWidget(head)
         bar = QHBoxLayout()
         bar.setContentsMargins(24, 0, 24, 6)

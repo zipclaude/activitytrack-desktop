@@ -724,7 +724,7 @@ class Home(QWidget):
         self.full = more.addAction(_("Modulo completo…"), actions.full_entry)
         self.more = W.icon_button("more", _("Altro"), menu=more)
         head = W.page(_("Home"), self.new_todo, self.new, self.more)
-        head.setContentsMargins(24, 0, 20, 8)
+        head.setContentsMargins(24, 0, 24, 8)
         column = QWidget()
         column.setMaximumWidth(COLUMN)
         top = QHBoxLayout()
