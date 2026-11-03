@@ -1,29 +1,42 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
 The activities on the desktop (docs/DESIGN.md §6.1, §6.3): the commands,
-shared by the tray menu and the window, and the Home with the activities
-running and those left to complete.
+shared by the tray menu, the window and its shortcuts, and the Home as the
+phone's: the big card of the latest activity, the small cards of the others
+running or suspended, then the list of to-dos and stopped activities with
+its filters.
 """
 
+from datetime import datetime
+
 from PyQt6.QtCore import QObject, QSettings, Qt, QTimer, pyqtSignal as Signal
+from PyQt6.QtGui import QActionGroup, QFont
 from PyQt6.QtWidgets import (
-    QComboBox, QFrame, QHBoxLayout, QLabel, QMenu, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QToolButton,
-    QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QLineEdit, QMenu, QMessageBox, QScrollArea, QVBoxLayout, QWidget,
 )
 
 from activitytrack import formats, texts
 from activitytrack.i18n import _
 from activitytrack.policy import stored
-from activitytrack.texts import KINDS, clock, error_text, hm, state_label
+from activitytrack.texts import KINDS, FIELDS, clock, error_text, hm, state_label
 from activitytrack.todos import DEFAULT_SHOW, SHOWS, WINDOWS, Todos
 from activitytrack.work import (
-    ACTIVE, PAUSE, REOPEN, STOP, SUSPENDED, TO_COMPLETE, TRAVEL, WORK, Work, WorkError,
+    PAUSE, REOPEN, STOP, SUSPEND, SUSPENDED, TO_COMPLETE, TRAVEL, WORK, Work, WorkError,
 )
 
-from . import forms
+from . import forms, icons, targets, theme, widgets as W
 
 # the app's colours of the modes
-COLOURS = {WORK: "#2e7d32", PAUSE: "#f9a825", TRAVEL: "#1565c0", SUSPENDED: "#ef6c00", TO_COMPLETE: "#c62828"}
+COLOURS = {WORK: theme.GREEN, PAUSE: theme.YELLOW, TRAVEL: theme.BLUE, SUSPENDED: theme.ORANGE,
+           TO_COMPLETE: theme.RED}
+# the round buttons of the commands: icon and colour (CommandButtons.kt)
+COMMAND_LOOK = {WORK: ("play", theme.GREEN), PAUSE: ("pause", theme.YELLOW), TRAVEL: ("travel", theme.BLUE),
+                SUSPEND: ("suspend", theme.ORANGE), STOP: ("stop", theme.RED)}
+# the window's keys (docs/DESIGN.md §6.5), shown in the tooltips and menus
+KEYS = {"new_entry": "Ctrl+N", "pause": "Ctrl+P", "stop": "Ctrl+T", "new_todo": "Ctrl+D", "find": "Ctrl+F",
+        "sync": "F5"}
+# the width of the pages' column: a wide window keeps the cards readable
+COLUMN = 920
 
 
 def commands(entry, policy):
@@ -66,11 +79,13 @@ class Actions(QObject):
         QMessageBox.warning(self._parent(), "ActivityTrack", error_text(e) if isinstance(e, WorkError) else str(e))
         self.changed.emit()
 
-    def new_entry(self, todo=None):
+    def new_entry(self, todo=None, travel=False):
         if self.session.account is None:
             return
         self.refresh_policy()
         d = forms.QuickEntry(self.work, self._parent(), todo=todo)
+        if travel and self.work.policy.feature("travel"):
+            d.options.travel_mode.setChecked(True)
         # from the tray: in front of what the user was doing
         d.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
         d.show()
@@ -95,6 +110,34 @@ class Actions(QObject):
             self._fail(e)
             return
         self._done()
+
+    def _pick(self, target, title):
+        """The uid of a target (targets.py); a list is the user's choice in a small list."""
+        if not isinstance(target, list):
+            return target
+        rows = []
+        for uid in target:
+            e = self.session.store.get("entry", uid) or {}
+            rows.append((uid, f"{self.work.label(e)} — {state_label(e)}"))
+        return W.choose(self._parent(), title, rows)
+
+    def pause_or_resume(self):
+        """Ctrl+P: pause the activity at work, else resume the paused or suspended one."""
+        if self.session.account is None:
+            return
+        cmd, target = targets.pause_or_resume(self.work)
+        title = _("Quale attività mettere in pausa?") if cmd == PAUSE else _("Quale attività riprendere?")
+        uid = self._pick(target, title)
+        if uid is not None:
+            self.command(uid, cmd)
+
+    def stop_current(self, focused=None):
+        """Ctrl+T: stop the activity of the big card (the stop sheet when details are missing)."""
+        if self.session.account is None:
+            return
+        uid = self._pick(targets.stop_target(self.work, focused), _("Quale attività fermare?"))
+        if uid is not None:
+            self.command(uid, STOP)
 
     def edit(self, uid):
         self.refresh_policy()
@@ -176,128 +219,336 @@ def _zone():
     return z or None
 
 
-class Card(QFrame):
-    """One activity: who and what, its state since when, the time so far, its commands."""
+def _time(ms):
+    return formats.time(datetime.fromtimestamp(ms / 1000))
 
-    def __init__(self, actions, entry, parent=None):
-        super().__init__(parent)
+
+def _span(work, uid):
+    """"11:00–11:45" from the first start to the last end ("…" while one is open), the day when not today."""
+    segs = work.segments(uid)
+    if not segs:
+        return ""
+    start = min(s["startUtcMs"] for s in segs)
+    ends = [s.get("endUtcMs") for s in segs]
+    end = "…" if None in ends else _time(max(ends))
+    return f"{clock(start)}–{end}"
+
+
+def _who(work, e):
+    """The card's title: the client, else the company (the app's card.title)."""
+    return work.name("client", e.get("clientUid")) or work.name("company", e.get("companyUid"))
+
+
+class BigCard(W.Surface):
+    """
+    The latest activity, as the phone's big card: company, client and
+    description, the state since when, the totals, the time of the running
+    stretch, the round commands with their names (HomeScreen.kt EntryCardView).
+    """
+
+    def __init__(self, actions, entry, tags, parent=None):
         work = actions.work
-        self.setFrameShape(QFrame.Shape.StyledPanel)
-        lay = QVBoxLayout(self)
-        status = entry.get("status")
-        colour = COLOURS.get(entry.get("mode") if status == ACTIVE else status, "#6f7680")
-        self.setStyleSheet(f"Card {{ border-left: 5px solid {colour}; }}")
-        title = QLabel(work.label(entry))
-        title.setStyleSheet("font-weight: bold; font-size: 11pt")
-        title.setWordWrap(True)
-        lay.addWidget(title)
+        super().__init__(theme.band(work, entry.get("companyUid"), entry.get("clientUid")), 16, True, parent)
+        self.uid = entry["uid"]
+        self.setToolTip(_("Apri l'attività"))
+        self.clicked.connect(lambda: actions.edit(self.uid))
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(self.BAND + 18, 14, 18, 16)
+        outer.setSpacing(6)
+        top = QHBoxLayout()
+        top.setSpacing(12)
+        text = QVBoxLayout()
+        text.setSpacing(2)
+        client = work.name("client", entry.get("clientUid"))
         company = work.name("company", entry.get("companyUid"))
-        open_seg = work.open_segment(entry["uid"])
-        since = clock(open_seg["startUtcMs"]) if open_seg else clock(work.last_boundary(entry["uid"]) or 0)
-        totals = work.totals(entry["uid"])
-        parts = [f"<b style='color:{colour}'>{state_label(entry)}</b> " + _("dalle %s") % since]
-        parts.append(f"{KINDS[WORK]} {hm(totals[WORK])}")
-        if totals[TRAVEL]:
+        if client and company:
+            text.addWidget(W.label(company, "muted"))
+        title = QLabel(client or company or _("Senza cliente"))
+        title.setFont(theme.font("card"))
+        title.setWordWrap(True)
+        text.addWidget(title)
+        if (entry.get("activity") or "").strip():
+            what = QLabel(entry["activity"].strip())
+            what.setWordWrap(True)
+            text.addWidget(what)
+        top.addLayout(text, 1)
+        side = QVBoxLayout()
+        side.setSpacing(4)
+        side.addWidget(W.TagDots(entry.get("tags"), tags), 0, Qt.AlignmentFlag.AlignRight)
+        open_seg = work.open_segment(self.uid)
+        self.timer = QLabel(hm(work.clock() - open_seg["startUtcMs"]) if open_seg else "")
+        self.timer.setFont(theme.font("timer", QFont.Weight.Light))
+        self.timer.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.timer.setToolTip(_("Il tratto in corso"))
+        side.addWidget(self.timer, 0, Qt.AlignmentFlag.AlignRight)
+        side.addStretch()
+        top.addLayout(side)
+        outer.addLayout(top)
+
+        since = open_seg["startUtcMs"] if open_seg else work.last_boundary(self.uid)
+        colour = theme.state_colour(entry) or theme.NO_COLOR
+        state = state_label(entry) + (" " + _("dalle %s") % clock(since) if since else "")
+        self.pill = W.Pill(state, colour, W.state_icon(entry))
+        outer.addWidget(self.pill)
+        if entry.get("plannedEndUtcMs"):
+            outer.addWidget(W.label(_("Fine prevista alle %s") % clock(entry["plannedEndUtcMs"]), "small"))
+        totals = work.totals(self.uid)
+        parts = [f"{KINDS[WORK]} {hm(totals[WORK])}"]
+        if totals[TRAVEL] or work.policy.feature("travel"):
             parts.append(f"{KINDS[TRAVEL]} {hm(totals[TRAVEL])}")
-        if company and company not in title.text():
-            parts.insert(0, company)
+        line = QHBoxLayout()
+        line.addWidget(W.label(" · ".join(parts), "small"))
         if entry.get("needsReview"):
-            parts.append("<b style='color:#c62828'>" + _("da verificare") + "</b>")
-        info = QLabel(" · ".join(parts))
-        lay.addWidget(info)
+            review = W.label(_("da verificare"), "error")
+            review.setToolTip(_("Da verificare: due tratti si sovrappongono."))
+            line.addWidget(review)
+        line.addStretch()
+        outer.addLayout(line)
+
         row = QHBoxLayout()
-        for text, cmd in commands(entry, work.policy):
-            b = QPushButton(text)
-            b.clicked.connect(lambda _c=False, u=entry["uid"], c=cmd: actions.command(u, c))
-            row.addWidget(b)
-        if status == TO_COMPLETE:
-            row.addWidget(QPushButton(_("Completa…"), clicked=lambda: actions.complete(entry["uid"])))
+        row.setSpacing(10)
+        row.setContentsMargins(0, 6, 0, 0)
+        self.commands = {}
+        for text_, cmd in commands(entry, work.policy):
+            icon, colour = COMMAND_LOOK[cmd]
+            key = KEYS["stop"] if cmd == STOP else KEYS["pause"] if cmd == PAUSE or text_ == _("Riprendi") else ""
+            c = W.Command(text_, icon, colour, lambda u=self.uid, c=cmd: actions.command(u, c),
+                          tip=W.with_key(text_, key))
+            self.commands[cmd] = c
+            row.addWidget(c)
         row.addStretch()
-        row.addWidget(QPushButton(_("Modifica…"), clicked=lambda: actions.edit(entry["uid"])))
+        edit = W.icon_button("edit", _("Modifica…"), lambda: actions.edit(self.uid))
+        row.addWidget(edit, 0, Qt.AlignmentFlag.AlignBottom)
+        outer.addLayout(row)
+
+
+class EmptyCard(W.Surface):
+    """The big card when nothing runs: the message and the start and travel buttons (EmptyEntryCard)."""
+
+    def __init__(self, actions, parent=None):
+        super().__init__(None, 16, False, parent)
+        work = actions.work
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(18, 22, 18, 20)
+        lay.setSpacing(14)
+        title = QLabel(_("Nessuna attività in corso"))
+        title.setFont(theme.font("card"))
+        title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        lay.addWidget(title)
+        row = QHBoxLayout()
+        row.setSpacing(28)
+        row.addStretch()
+        allowed = work.policy.feature("entries") and actions.session.account is not None
+        self.start = W.Command(_("Avvia"), "play", theme.GREEN, lambda: actions.new_entry(), 64,
+                               W.with_key(_("Nuova attività"), KEYS["new_entry"]))
+        self.start.button.setEnabled(allowed)
+        row.addWidget(self.start)
+        if work.policy.feature("travel"):
+            self.travel = W.Command(KINDS[TRAVEL], "travel", theme.BLUE, lambda: actions.new_entry(travel=True), 64,
+                                    _("Nuovo viaggio"))
+            self.travel.button.setEnabled(allowed)
+            row.addWidget(self.travel)
+        row.addStretch()
         lay.addLayout(row)
 
 
-class TodoRow(QFrame):
-    """A to-do of the Home list: title, client and state, when; start, done and the rest in a menu."""
+class SmallCard(W.Surface):
+    """
+    Another activity running or suspended (SmallEntryCard): one line, the
+    state and its times; a click brings it to the big card, the button
+    resumes or pauses it.
+    """
 
-    def __init__(self, actions, t, st, parent=None):
-        super().__init__(parent)
-        work, policy = actions.work, actions.work.policy
-        self.setFrameShape(QFrame.Shape.StyledPanel)
+    def __init__(self, actions, entry, tags, select, parent=None):
+        work = actions.work
+        super().__init__(theme.band(work, entry.get("companyUid"), entry.get("clientUid")), 14, True, parent)
+        self.uid = entry["uid"]
+        self.setToolTip(_("Mostra nella scheda grande"))
+        self.clicked.connect(lambda: select(self.uid))
         lay = QHBoxLayout(self)
+        lay.setContentsMargins(self.BAND + 14, 8, 10, 8)
+        lay.setSpacing(12)
         text = QVBoxLayout()
-        title = QLabel(t.get("title") or "")
-        title.setWordWrap(True)
-        title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        font = title.font()
-        font.setBold(st not in ("done", "ignored"))
-        font.setStrikeOut(st == "ignored")
-        title.setFont(font)
+        text.setSpacing(4)
+        what = (entry.get("activity") or "").strip()
+        title = W.Elided(" · ".join(x for x in (_who(work, entry) or _("Senza cliente"), what) if x))
+        title.setFont(theme.font("title", QFont.Weight.Medium))
         text.addWidget(title)
-        who = work.name("client", t.get("clientUid")) or work.name("company", t.get("companyUid"))
-        parts = [who, texts.TODO_STATES.get(st, "")]
-        if t.get("priority") and st not in ("done", "ignored"):
-            parts.append(f"P{t['priority']}")
-        sub = QLabel(" · ".join(x for x in parts if x))
-        sub.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        sub.setStyleSheet("color: #c62828" if st == "overdue" else "color: palette(placeholder-text)")
-        text.addWidget(sub)
+        line = QHBoxLayout()
+        line.setSpacing(8)
+        pill = W.Pill(state_label(entry), theme.state_colour(entry) or theme.NO_COLOR, W.state_icon(entry))
+        pill.setFont(theme.font("label", QFont.Weight.DemiBold))
+        line.addWidget(pill)
+        t = work.totals(self.uid)
+        line.addWidget(W.label(f"{_span(work, self.uid)} ({hm(t[WORK] + t[TRAVEL])})", "small"))
+        line.addStretch()
+        text.addLayout(line)
         lay.addLayout(text, 1)
-        lay.addWidget(QLabel(texts.todo_when(t, actions.todos.tz())))
+        dots = W.TagDots(entry.get("tags"), tags)
+        lay.addWidget(dots, 0, Qt.AlignmentFlag.AlignTop)
+        resting = entry.get("status") == SUSPENDED or entry.get("mode") == PAUSE
+        cmd = WORK if resting else PAUSE
+        icon, colour = COMMAND_LOOK[cmd]
+        name = _("Riprendi") if resting else _("Pausa")
+        self.button = W.RoundButton(icon, colour, 44, name)
+        self.button.clicked.connect(lambda _c=False: actions.command(self.uid, cmd))
+        lay.addWidget(self.button)
+
+
+def _row_shell(row, mark):
+    """The rows' common layout: the mark, the texts, the side, the buttons."""
+    lay = QHBoxLayout(row)
+    lay.setContentsMargins(row.BAND + 12, 9, 10, 9)
+    lay.setSpacing(12)
+    lay.addWidget(W.Mark(mark))
+    return lay
+
+
+def _texts(title, sub, dim=False, strike=False, alert=False):
+    box = QVBoxLayout()
+    box.setSpacing(2)
+    t = W.Elided(title)
+    f = theme.font("title", QFont.Weight.Normal if dim else QFont.Weight.DemiBold)
+    f.setStrikeOut(strike)
+    t.setFont(f)
+    if dim:
+        W.role(t, "muted")
+    box.addWidget(t)
+    s = W.Elided(sub)
+    s.setFont(theme.font("label"))
+    W.role(s, "error" if alert else "muted")
+    if strike:
+        f = s.font()
+        f.setStrikeOut(True)
+        s.setFont(f)
+    box.addWidget(s)
+    return box, t, s
+
+
+def _side(when, extra="", alert=False, dots=None):
+    box = QVBoxLayout()
+    box.setSpacing(2)
+    if dots is not None:
+        box.addWidget(dots, 0, Qt.AlignmentFlag.AlignRight)
+    w = W.label(when, "error" if alert else None)
+    w.setAlignment(Qt.AlignmentFlag.AlignRight)
+    w.setFont(theme.font("label"))
+    box.addWidget(w)
+    if extra:
+        e = W.label(extra, "small")
+        e.setAlignment(Qt.AlignmentFlag.AlignRight)
+        box.addWidget(e)
+    return box
+
+
+class TodoRow(W.Surface):
+    """
+    A to-do of the lists: its mark, the title, "client · Da fare · state";
+    when on the right; start and done at hand, the rest in a menu. A click
+    opens it.
+    """
+
+    def __init__(self, actions, t, st, parent=None, kind_word=True):
+        work, policy = actions.work, actions.work.policy
+        super().__init__(theme.band(work, t.get("companyUid"), t.get("clientUid")) or theme.tokens().line, 12, True,
+                         parent)
         uid = t["uid"]
-        if st not in ("done", "ignored"):
+        self.uid = uid
+        over = st in ("done", "ignored")
+        self.outlined = st == "ignored"
+        self.clicked.connect(lambda: actions.edit_todo(uid))
+        lay = _row_shell(self, st)
+        who = work.name("client", t.get("clientUid")) or work.name("company", t.get("companyUid"))
+        parts = [who, _("Da fare") if kind_word else "", texts.TODO_STATES.get(st, "")]
+        if t.get("priority") and not over:
+            parts.append(f"P{t['priority']}")
+        box, self.title, self.sub = _texts(t.get("title") or "", " · ".join(x for x in parts if x), over,
+                                           st == "ignored", st == "overdue")
+        lay.addLayout(box, 1)
+        lay.addLayout(_side(texts.todo_when(t, actions.todos.tz()), alert=st == "overdue"))
+        if not over:
             if policy.feature("entries"):
-                lay.addWidget(QPushButton(_("Avvia"), clicked=lambda: actions.start_todo(uid)))
-            lay.addWidget(QPushButton(_("Fatto"), clicked=lambda: actions.todo_done(uid)))
+                start = W.RoundButton("play", theme.GREEN, 36, _("Avvia"))
+                start.clicked.connect(lambda _c=False: actions.start_todo(uid))
+                lay.addWidget(start)
+            done = W.RoundButton("done", None, 36, _("Fatto"))
+            done.clicked.connect(lambda _c=False: actions.todo_done(uid))
+            lay.addWidget(done)
         else:
-            lay.addWidget(QPushButton(_("Riapri"), clicked=lambda: actions.todo_reopen(uid)))
-        more = QToolButton(text="⋯", popupMode=QToolButton.ToolButtonPopupMode.InstantPopup)
-        menu = QMenu(more)
-        if st not in ("done", "ignored") and t.get("planDate") and policy.feature("planning"):
+            again = W.RoundButton("restore", None, 36, _("Riapri"))
+            again.clicked.connect(lambda _c=False: actions.todo_reopen(uid))
+            lay.addWidget(again)
+        menu = QMenu(self)
+        if not over and t.get("planDate") and policy.feature("planning"):
             menu.addAction(_("Posticipa di %d min") % actions.snooze_min(), lambda: actions.todo_postpone(uid))
-        if st not in ("done", "ignored") and policy.feature("ignoreTodos"):
+        if not over and policy.feature("ignoreTodos"):
             menu.addAction(_("Ignora"), lambda: actions.todo_ignore(uid))
         menu.addAction(_("Modifica…"), lambda: actions.edit_todo(uid))
-        more.setMenu(menu)
-        lay.addWidget(more)
+        self.more = W.icon_button("more", _("Altro"), menu=menu)
+        lay.addWidget(self.more)
 
 
-class EntryRow(QFrame):
-    """A stopped activity of the Home list: complete it, or open it."""
+class EntryRow(W.Surface):
+    """A stopped activity of the Home list: complete it (a click too, when details are missing), or open it."""
 
-    def __init__(self, actions, e, end, parent=None):
-        super().__init__(parent)
+    def __init__(self, actions, e, end, tags=None, parent=None):
         work = actions.work
-        self.setFrameShape(QFrame.Shape.StyledPanel)
-        lay = QHBoxLayout(self)
-        text = QVBoxLayout()
-        title = QLabel(work.label(e))
-        title.setWordWrap(True)
-        title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        text.addWidget(title)
-        t = work.totals(e["uid"])
-        missing = e.get("status") == TO_COMPLETE
-        sub = QLabel(f"{state_label(e)} · {KINDS[WORK]} {hm(t[WORK])}")
-        sub.setStyleSheet("color: #c62828" if missing else "color: palette(placeholder-text)")
-        text.addWidget(sub)
-        lay.addLayout(text, 1)
-        lay.addWidget(QLabel(_("fino alle %s") % formats.time(end)))
+        super().__init__(theme.band(work, e.get("companyUid"), e.get("clientUid")) or theme.tokens().line, 12, True,
+                         parent)
         uid = e["uid"]
+        self.uid = uid
+        missing = e.get("status") == TO_COMPLETE
+        self.clicked.connect(lambda: actions.complete(uid) if missing else actions.edit(uid))
+        lay = _row_shell(self, "to_complete" if missing else "closed")
+        client, company = work.name("client", e.get("clientUid")), work.name("company", e.get("companyUid"))
+        parts = [company if client else "", (e.get("activity") or "").strip() or _("senza descrizione"),
+                 state_label(e)]
+        box, self.title, self.sub = _texts(client or company or _("Senza cliente"),
+                                           " · ".join(x for x in parts if x), not missing, False, missing)
+        lay.addLayout(box, 1)
+        t = work.totals(uid)
+        extra = f"{KINDS[WORK]} {hm(t[WORK])}" + (f" · {KINDS[TRAVEL]} {hm(t[TRAVEL])}" if t[TRAVEL] else "")
+        lay.addLayout(_side(_span(work, uid), extra, dots=W.TagDots(e.get("tags"), tags or {})))
         if missing:
-            lay.addWidget(QPushButton(_("Completa…"), clicked=lambda: actions.complete(uid)))
-        more = QToolButton(text="⋯", popupMode=QToolButton.ToolButtonPopupMode.InstantPopup)
-        menu = QMenu(more)
+            lay.addWidget(W.button(_("Completa…"), lambda: actions.complete(uid), "tonal"))
+        menu = QMenu(self)
         menu.addAction(_("Modifica…"), lambda: actions.edit(uid))
         menu.addAction(_("Riapri"), lambda: actions.reopen_entry(uid))
-        more.setMenu(menu)
-        lay.addWidget(more)
+        self.more = W.icon_button("more", _("Altro"), menu=menu)
+        lay.addWidget(self.more)
+
+
+def search_field(on_change):
+    """The search of a list (Ctrl+F): what is typed narrows the rows below."""
+    f = QLineEdit()
+    f.setPlaceholderText(_("Cerca"))
+    f.setClearButtonEnabled(True)
+    t = theme.tokens()
+    f.addAction(icons.material("search", t.muted), QLineEdit.ActionPosition.LeadingPosition)
+    f.setToolTip(W.with_key(_("Cerca"), KEYS["find"]))
+    f.setMinimumWidth(160)
+    f.setMaximumWidth(280)
+    f.textChanged.connect(lambda _t: on_change())
+    return f
+
+
+def matches(work, obj, words):
+    """Every word typed in the title, the description, the client, the company, the notes or the tags."""
+    if not words:
+        return True
+    hay = " ".join(str(x) for x in (
+        obj.get("title"), obj.get("activity"), obj.get("notes"), obj.get("refs"), " ".join(obj.get("tags") or []),
+        work.name("client", obj.get("clientUid")), work.name("company", obj.get("companyUid")),
+    ) if x).casefold()
+    return all(w in hay for w in words)
 
 
 class Filters(QWidget):
     """
-    Period, state, company and tag of the Home list, as the app's; kept
-    between starts. A setting the policy fixes (homeWindow, homeShow) is
-    greyed with its value.
+    Period, state, company and tag of the Home list, as chips with their
+    menus like the app's; kept between starts. A setting the policy fixes
+    (homeWindow, homeShow) is greyed with its value. The search narrows
+    the rows (Ctrl+F).
     """
 
     changed = Signal()
@@ -307,40 +558,45 @@ class Filters(QWidget):
         self.actions = actions
         self.settings = QSettings()
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-        self.window = QComboBox()
+        lay.setContentsMargins(0, 8, 0, 0)
+        lay.setSpacing(8)
+        self.window_menu = QMenu(self)
+        group = QActionGroup(self)
+        self.window_actions = {}
         for w in WINDOWS:
-            self.window.addItem(texts.WINDOWS[w], w)
-        self.show_button = QToolButton(popupMode=QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.show_menu = QMenu(self.show_button)
+            a = self.window_menu.addAction(texts.WINDOWS[w])
+            a.setCheckable(True)
+            group.addAction(a)
+            a.triggered.connect(self._changed)
+            self.window_actions[w] = a
+        self.window_button = W.chip(menu=self.window_menu, tip=_("Periodo"))
+        self.show_menu = QMenu(self)
         self.show_actions = {}
         for key in SHOWS:
             a = self.show_menu.addAction(texts.SHOWS[key])
             a.setCheckable(True)
             a.toggled.connect(self._changed)
             self.show_actions[key] = a
-        self.show_button.setMenu(self.show_menu)
-        self.company = QComboBox()
-        self.tag = QComboBox()
-        # a long company name must not push the list out of the window
-        for c in (self.company, self.tag):
-            c.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-            c.setMinimumContentsLength(12)
-        for w in (self.window, self.show_button, self.company, self.tag):
+        self.show_button = W.chip(menu=self.show_menu, tip=_("Cosa mostra la lista"))
+        self.company_menu = QMenu(self)
+        self.company_button = W.chip(menu=self.company_menu)
+        self.tag_menu = QMenu(self)
+        self.tag_button = W.chip(menu=self.tag_menu)
+        self.company = self.tag = None
+        for w in (self.window_button, self.show_button, self.company_button, self.tag_button):
             lay.addWidget(w)
         lay.addStretch()
+        self.search = search_field(self.changed.emit)
+        lay.addWidget(self.search)
         self.load()
-        self.window.currentIndexChanged.connect(self._changed)
-        self.company.currentIndexChanged.connect(self._changed)
-        self.tag.currentIndexChanged.connect(self._changed)
 
     def load(self):
         p = self.actions.work.policy
         window = p.setting("homeWindow", -1)
         if not p.setting_fixed("homeWindow"):
             window = int(self.settings.value("home/window", window))
-        self.window.setCurrentIndex(max(0, self.window.findData(window)))
-        self.window.setEnabled(not p.setting_fixed("homeWindow"))
+        (self.window_actions.get(window) or self.window_actions[-1]).setChecked(True)
+        self.window_button.setEnabled(not p.setting_fixed("homeWindow"))
         shown = p.setting("homeShow", ",".join(DEFAULT_SHOW))
         if not p.setting_fixed("homeShow"):
             shown = self.settings.value("home/show", shown)
@@ -350,120 +606,227 @@ class Filters(QWidget):
             a.setChecked(key in shown)
             a.blockSignals(False)
         self.show_button.setEnabled(not p.setting_fixed("homeShow"))
-        self._label()
+        self.company = self.settings.value("home/company") or None
+        self.tag = self.settings.value("home/tag") or None
         self.fill()
 
+    def _menu(self, menu, first, items, current, pick):
+        menu.clear()
+        group = QActionGroup(menu)
+        for value, text in [(None, first)] + items:
+            a = menu.addAction(text)
+            a.setCheckable(True)
+            a.setChecked(value == current)
+            group.addAction(a)
+            a.triggered.connect(lambda _c=False, v=value: pick(v))
+
     def fill(self):
-        """The companies and tags of the master data (kept when the list is filled again)."""
+        """The companies and tags of the master data (the choice kept when they are filled again)."""
         work = self.actions.work
-        for combo, type_, first, saved in ((self.company, "company", _("Tutte le aziende"), "home/company"),
-                                           (self.tag, "tag", _("Tutti i tag"), "home/tag")):
-            current = combo.currentData() if combo.count() else self.settings.value(saved)
-            combo.blockSignals(True)
-            combo.clear()
-            combo.addItem(first, None)
-            for r in work.masters(type_):
-                combo.addItem(r.get("name") or "", r["uid"] if type_ == "company" else r.get("name"))
-            combo.setCurrentIndex(max(0, combo.findData(current)) if current else 0)
-            combo.blockSignals(False)
-        self.company.setVisible(work.policy.field("company").visible and self.company.count() > 2)
-        self.tag.setVisible(work.policy.field("tags").visible and self.tag.count() > 1)
+        companies = [(r["uid"], r.get("name") or "") for r in work.masters("company")]
+        tags = [(r.get("name"), r.get("name")) for r in work.masters("tag") if r.get("name")]
+        if self.company not in {c for c, _n in companies}:
+            self.company = None
+        if self.tag not in {t for t, _n in tags}:
+            self.tag = None
+        self._menu(self.company_menu, _("Tutte le aziende"), companies, self.company, self._company)
+        self._menu(self.tag_menu, _("Tutti i tag"), tags, self.tag, self._tag)
+        self.company_button.setVisible(work.policy.field("company").visible and len(companies) > 1)
+        self.tag_button.setVisible(work.policy.field("tags").visible and bool(tags))
+        self._label()
+
+    def _company(self, uid):
+        self.company = uid
+        self._changed()
+
+    def _tag(self, name):
+        self.tag = name
+        self._changed()
 
     def _label(self):
-        shown = [texts.SHOWS[k] for k, a in self.show_actions.items() if a.isChecked()]
-        self.show_button.setText(_("Stato: %s") % (", ".join(shown) if shown else _("nessuno")) + " ▾")
+        window = self.values()["window"]
+        self.window_button.setText(texts.WINDOWS[window] + "  ▾")
+        W.set_changed(self.window_button, window != -1)
+        self.show_button.setText(_("Stato") + "  ▾")
+        self.show_button.setToolTip(", ".join(texts.SHOWS[k] for k in self.shown()) or _("nessuno"))
+        W.set_changed(self.show_button, set(self.shown()) != set(DEFAULT_SHOW))
+        work = self.actions.work
+        self.company_button.setText((work.name("company", self.company) or FIELDS["company"]) + "  ▾")
+        W.set_changed(self.company_button, self.company is not None)
+        self.tag_button.setText((self.tag or FIELDS["tags"]) + "  ▾")
+        W.set_changed(self.tag_button, self.tag is not None)
 
     def _changed(self):
         self._label()
-        self.settings.setValue("home/window", self.window.currentData())
+        self.settings.setValue("home/window", self.values()["window"])
         self.settings.setValue("home/show", ",".join(self.shown()))
-        self.settings.setValue("home/company", self.company.currentData() or "")
-        self.settings.setValue("home/tag", self.tag.currentData() or "")
+        self.settings.setValue("home/company", self.company or "")
+        self.settings.setValue("home/tag", self.tag or "")
         self.changed.emit()
 
     def shown(self):
         return [k for k, a in self.show_actions.items() if a.isChecked()]
 
+    def words(self):
+        return self.search.text().casefold().split()
+
     def values(self):
-        return dict(show=self.shown(), window=self.window.currentData(), company=self.company.currentData(),
-                    tag=self.tag.currentData())
+        window = next((w for w, a in self.window_actions.items() if a.isChecked()), -1)
+        return dict(show=self.shown(), window=window, company=self.company, tag=self.tag)
+
+
+def clear(lay):
+    """The widgets of a layout gone at once (findChildren no longer sees them)."""
+    while lay.count():
+        item = lay.takeAt(0)
+        w = item.widget()
+        if w is not None:
+            w.setParent(None)
+            w.deleteLater()
+        elif item.layout() is not None:
+            clear(item.layout())
+
+
+def scroll_page(column):
+    """A section's scrolling body: [column] centred, no wider than COLUMN."""
+    scroll = QScrollArea(widgetResizable=True)
+    scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    body = QWidget()
+    body.setProperty("page", True)
+    lay = QHBoxLayout(body)
+    lay.setContentsMargins(24, 4, 24, 24)
+    column.setMaximumWidth(COLUMN)
+    lay.addWidget(column)
+    scroll.setWidget(body)
+    return scroll
 
 
 class Home(QWidget):
-    """The activities running, then one list of to-dos and stopped activities with the filters (app Home)."""
+    """
+    The phone's Home: the big card of the latest activity, the small cards
+    of the others, the filters, then the list in sections.
+    """
 
-    def __init__(self, actions, parent=None):
+    def __init__(self, actions, parent=None, on_pair=None):
         super().__init__(parent)
         self.actions = actions
+        self.on_pair = on_pair
+        self.selected = None
+        self.big_uid = None
         lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 18, 0, 0)
+        self.new = W.button(_("Nuova attività"), lambda: actions.new_entry(), "primary", "play",
+                            W.with_key(_("Nuova attività"), KEYS["new_entry"]))
+        self.new_todo = W.button(_("Nuovo Da fare"), lambda: actions.new_todo(), None, "add",
+                                 W.with_key(_("Nuovo Da fare"), KEYS["new_todo"]))
+        more = QMenu(self)
+        self.full = more.addAction(_("Modulo completo…"), actions.full_entry)
+        self.more = W.icon_button("more", _("Altro"), menu=more)
+        head = W.page(_("Home"), self.new_todo, self.new, self.more)
+        head.setContentsMargins(24, 0, 20, 8)
+        column = QWidget()
+        column.setMaximumWidth(COLUMN)
         top = QHBoxLayout()
-        self.new = QPushButton(_("Nuova attività…"), clicked=lambda: actions.new_entry())
-        self.new.setDefault(True)
-        self.full = QPushButton(_("Modulo completo…"), clicked=actions.full_entry)
-        self.new_todo = QPushButton(_("Nuovo Da fare…"), clicked=lambda: actions.new_todo())
-        for b in (self.new, self.full, self.new_todo):
-            top.addWidget(b)
-        top.addStretch()
+        top.addWidget(head)
         lay.addLayout(top)
-        self.scroll = QScrollArea(widgetResizable=True)
-        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.column = QVBoxLayout(column)
+        self.column.setContentsMargins(0, 0, 0, 0)
+        self.column.setSpacing(10)
+        self.cards = QVBoxLayout()
+        self.cards.setSpacing(10)
+        self.column.addLayout(self.cards)
+        self.filters = Filters(actions)
+        self.filters.changed.connect(self.refresh_list)
+        self.column.addWidget(self.filters)
+        self.list = QVBoxLayout()
+        self.list.setSpacing(8)
+        self.column.addLayout(self.list)
+        self.column.addStretch()
+        self.scroll = scroll_page(column)
         lay.addWidget(self.scroll)
-        self.filters = None
         actions.changed.connect(self.refresh)
         actions.redraw.connect(self.refresh)
+        theme.notifier().changed.connect(self.refresh)
         # the elapsed times move
         self._tick = QTimer(self, interval=30_000, timeout=self.refresh)
         self._tick.start()
         self.refresh()
 
-    def _heading(self, lay, title):
-        head = QLabel(title.upper())
-        head.setStyleSheet("color: palette(placeholder-text); font-weight: bold; margin-top: 8px")
-        lay.addWidget(head)
+    def select(self, uid):
+        """A small card to the big one (the app's vm.select)."""
+        self.selected = uid
+        self.refresh()
 
     def refresh(self):
         work = self.actions.work
         policy = work.policy
-        position = self.scroll.verticalScrollBar().value()
-        body = QWidget()
-        lay = QVBoxLayout(body)
         paired = self.actions.session.account is not None
         self.new.setEnabled(paired and policy.feature("entries"))
         self.full.setEnabled(paired and policy.feature("entries"))
         self.new_todo.setEnabled(paired)
         self.new_todo.setVisible(policy.feature("todos"))
+        clear(self.cards)
+        tags = theme.tag_colours(work)
         if not paired:
-            lay.addWidget(QLabel(_("Associa questo PC a un server ActivityTrack Web dalla scheda "
-                                   "«Sincronizzazione».")))
-        running = work.running()
-        if running:
-            self._heading(lay, _("In corso"))
-            for e in running:
-                lay.addWidget(Card(self.actions, e))
-        # the filters live across redraws: the list below is drawn again
-        if self.filters is None:
-            self.filters = Filters(self.actions)
-            self.filters.changed.connect(self.refresh)
-        else:
-            self.filters.setParent(None)
-            self.filters.fill()
-        lay.addWidget(self.filters)
+            self.cards.addWidget(self._unpaired())
+        running = {e["uid"]: e for e in work.running()}
+        order = targets.running(work)
+        if self.selected in running:
+            order.remove(self.selected)
+            order.insert(0, self.selected)
+        self.big_uid = order[0] if order else None
+        if order:
+            self.cards.addWidget(BigCard(self.actions, running[order[0]], tags))
+            for uid in order[1:]:
+                self.cards.addWidget(SmallCard(self.actions, running[uid], tags, self.select))
+        elif paired:
+            self.cards.addWidget(EmptyCard(self.actions))
+        self.filters.fill()
+        # unpaired: the card that says how to begin, nothing to filter
+        self.filters.setVisible(paired)
+        self.refresh_list()
+
+    def refresh_list(self):
+        work = self.actions.work
+        clear(self.list)
+        tags = theme.tag_colours(work)
         f = self.filters.values()
+        words = self.filters.words()
         groups = self.actions.todos.home(f["show"], f["window"], f["company"], f["tag"])
+        shown = 0
         for section, items in groups:
-            self._heading(lay, texts.SECTIONS[section])
+            items = [it for it in items if matches(work, it[1], words)]
+            if not items:
+                continue
+            self.list.addWidget(W.section_head(texts.SECTIONS[section], section in ("overdue", "missing")))
             for kind, obj, extra in items:
                 if kind == "todo":
-                    lay.addWidget(TodoRow(self.actions, obj, extra))
+                    self.list.addWidget(TodoRow(self.actions, obj, extra))
                 else:
-                    lay.addWidget(EntryRow(self.actions, obj, extra))
-        if paired and not groups:
-            empty = QLabel(_("Niente in questo intervallo."))
-            empty.setStyleSheet("color: palette(placeholder-text); margin-top: 8px")
-            lay.addWidget(empty)
-        lay.addStretch()
-        body.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
-        # the previous body goes with its rows (setWidget deletes it); the filters were taken out first
-        self.scroll.setWidget(body)
-        self.scroll.verticalScrollBar().setValue(position)
+                    self.list.addWidget(EntryRow(self.actions, obj, extra, tags))
+                shown += 1
+        if self.actions.session.account is not None and not shown:
+            empty = W.label(_("Niente da mostrare con questi filtri.") if words or groups
+                            else _("Niente in questo intervallo."), "muted")
+            empty.setContentsMargins(4, 12, 0, 0)
+            self.list.addWidget(empty)
+
+    def _unpaired(self):
+        card = W.Surface(None, 16)
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(20, 18, 20, 18)
+        lay.setSpacing(10)
+        lay.addWidget(W.label(_("Associa questo PC"), "h2"))
+        lay.addWidget(W.label(_("Collega ActivityTrack a un server ActivityTrack Web: le attività e i Da fare "
+                                "restano sincronizzati con il telefono e il web."), wrap=True))
+        if self.on_pair is not None:
+            row = QHBoxLayout()
+            row.addWidget(W.button(_("Associa a un server…"), self.on_pair, "tonal", "devices"))
+            row.addStretch()
+            lay.addLayout(row)
+        return card
+
+    def focus_search(self):
+        self.filters.search.setFocus(Qt.FocusReason.ShortcutFocusReason)
+        self.filters.search.selectAll()

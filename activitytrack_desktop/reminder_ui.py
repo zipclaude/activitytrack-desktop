@@ -230,9 +230,7 @@ class ReminderSettings(QWidget):
         super().__init__(parent)
         self.actions = actions
         lay = QVBoxLayout(self)
-        title = QLabel(_("Promemoria"))
-        title.setStyleSheet("font-size: 18pt")
-        lay.addWidget(title)
+        lay.setContentsMargins(0, 0, 0, 0)
         box = QGroupBox(_("Mostra"))
         bl = QVBoxLayout(box)
         settings = QSettings()
@@ -243,7 +241,9 @@ class ReminderSettings(QWidget):
             bl.addWidget(c)
             self.switches[kind] = c
         lay.addWidget(box)
-        form = QFormLayout()
+        times = QGroupBox(_("Intervalli"))
+        form = QFormLayout(times)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
         self.spins = {}
         for key, label in INTERVALS.items():
             lo, hi = R.LIMITS[key]
@@ -251,11 +251,11 @@ class ReminderSettings(QWidget):
             s.valueChanged.connect(lambda v, k=key: (settings.setValue(f"reminders/{k}", v), actions.redraw.emit()))
             form.addRow(label, s)
             self.spins[key] = s
-        lay.addLayout(form)
+        lay.addWidget(times)
         note = QLabel(_("Le notifiche hanno i pulsanti delle risposte.") if notifier.native else _(
             "Le notifiche di questo desktop non hanno pulsanti: un clic apre la domanda in una finestra."))
         note.setWordWrap(True)
-        note.setStyleSheet("color: palette(placeholder-text)")
+        note.setProperty("role", "muted")
         lay.addWidget(note)
         lay.addWidget(QLabel(_("Il telefono mostra gli stessi promemoria. Una risposta che cambia l'attività o il "
                                "Da fare (pausa, stop, avvio) vale anche sull'altro dispositivo; un «Sì» resta "

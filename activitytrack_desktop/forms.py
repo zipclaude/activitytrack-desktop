@@ -11,8 +11,8 @@ from datetime import date
 from PyQt6.QtCore import QDate, QDateTime, QTime, Qt
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
-    QCheckBox, QComboBox, QCompleter, QDateEdit, QDateTimeEdit, QDialog, QDialogButtonBox, QFormLayout, QGroupBox,
-    QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QRadioButton, QSpinBox, QTimeEdit,
+    QButtonGroup, QCheckBox, QComboBox, QCompleter, QDateEdit, QDateTimeEdit, QDialog, QDialogButtonBox, QFormLayout,
+    QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox, QTimeEdit,
     QVBoxLayout, QWidget,
 )
 
@@ -23,6 +23,7 @@ from activitytrack.work import (
     ACTIVE, PAUSE, STOP, SUSPEND, TO_COMPLETE, TRAVEL, WORK, StartRequest, WorkError,
 )
 
+from . import icons, theme, widgets as W
 from .timegrid_ui import attach_range, attach_single
 
 KEEP = "KEEP"
@@ -62,10 +63,40 @@ def _row(*widgets):
     w = QWidget()
     lay = QHBoxLayout(w)
     lay.setContentsMargins(0, 0, 0, 0)
+    lay.setSpacing(0 if widgets and widgets[0].property("seg") else 6)
     for x in widgets:
         lay.addWidget(x)
     lay.addStretch()
     return w
+
+
+def _wrapped():
+    """A form with the names above the fields, as the phone's."""
+    form = QFormLayout()
+    form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
+    form.setVerticalSpacing(8)
+    return form
+
+
+def segmented(*choices):
+    """The app's segmented buttons, one checked: [(text, icon)] → the buttons (the first one checked)."""
+    group = QButtonGroup()
+    out = []
+    t = theme.tokens()
+    for i, (text, icon) in enumerate(choices):
+        b = QPushButton(text)
+        b.setCheckable(True)
+        b.setAutoDefault(False)
+        b.setProperty("seg", "first" if i == 0 else "last" if i == len(choices) - 1 else "mid")
+        b.setMinimumWidth(120)
+        if icon:
+            b.setIcon(icons.material(icon, t.text))
+        group.addButton(b)
+        out.append(b)
+    out[0].setChecked(True)
+    # the group lives with the first button
+    group.setParent(out[0])
+    return out
 
 
 class MasterCombo(QComboBox):
@@ -142,17 +173,17 @@ class StartOptions(QWidget):
         super().__init__(parent)
         self.work = work
         lay = QFormLayout(self)
+        lay.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
+        lay.setVerticalSpacing(8)
         lay.setContentsMargins(0, 0, 0, 0)
-        modes = QHBoxLayout()
-        self.work_mode = QRadioButton(KINDS[WORK], checked=True)
-        self.travel_mode = QRadioButton(KINDS[TRAVEL])
-        modes.addWidget(self.work_mode)
-        modes.addWidget(self.travel_mode)
-        modes.addStretch()
-        self.travel_mode.setVisible(work.policy.feature("travel"))
-        lay.addRow(_("Tipo"), modes)
-        self.done = QCheckBox(_("Già fatta: indica inizio e fine"))
-        lay.addRow("", self.done)
+        # the app's segmented buttons: work or travel, now or already done
+        travel = work.policy.feature("travel")
+        self.work_mode, self.travel_mode = segmented((KINDS[WORK], "play"), (KINDS[TRAVEL], "travel"))
+        if travel:
+            lay.addRow(_("Tipo"), _row(self.work_mode, self.travel_mode))
+        self.now_mode, self.done = segmented((_("Adesso"), None), (_("Già fatta"), None))
+        self.done.setToolTip(_("Già fatta: indica inizio e fine"))
+        lay.addRow(_("Quando"), _row(self.now_mode, self.done))
         self.start = QDateTimeEdit(QDateTime.currentDateTime().addSecs(-30 * 60), calendarPopup=True)
         self.end = QDateTimeEdit(QDateTime.currentDateTime(), calendarPopup=True)
         _formatted(self.start, self.end)
@@ -169,9 +200,9 @@ class StartOptions(QWidget):
         self.times = QWidget()
         self.times.setLayout(times)
         times.setContentsMargins(0, 0, 0, 0)
-        lay.addRow(_("Quando"), self.times)
-        self.times.setEnabled(False)
-        self.done.toggled.connect(self.times.setEnabled)
+        lay.addRow("", self.times)
+        self.times.setVisible(False)
+        self.done.toggled.connect(self.times.setVisible)
         # the activities running: left running, suspended or stopped
         self.others = {}
         concurrent = work.policy.feature("concurrentEntries")
@@ -188,7 +219,9 @@ class StartOptions(QWidget):
             if e.get("mode") != PAUSE:
                 c.setCurrentIndex(c.findData(SUSPEND))
             self.others[e["uid"]] = c
-            lay.addRow(work.label(e), c)
+            name = QLabel(work.label(e))
+            name.setWordWrap(True)
+            lay.addRow(name, _row(c))
 
     def apply(self, req):
         req.mode = TRAVEL if self.travel_mode.isChecked() else WORK
@@ -206,8 +239,14 @@ class _Dialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.lay = QVBoxLayout(self)
+        self.lay.setContentsMargins(22, 16, 22, 16)
+        self.lay.setSpacing(12)
+        # the name on top, as the phone's screens
+        self.heading = QLabel(title)
+        self.heading.setFont(theme.font("card"))
+        self.lay.addWidget(self.heading)
         self.message = QLabel(wordWrap=True)
-        self.message.setStyleSheet("color: #c62828")
+        self.message.setProperty("role", "error")
         self.message.hide()
 
     def fail(self, e):
@@ -219,14 +258,24 @@ class _Dialog(QDialog):
                                QDialogButtonBox.StandardButton.NoButton)
         self.ok = box.addButton(ok_text, QDialogButtonBox.ButtonRole.AcceptRole)
         self.ok.setDefault(True)
+        self.ok.setProperty("role", "primary")
         for text, slot in extra:
-            box.addButton(text, QDialogButtonBox.ButtonRole.ActionRole).clicked.connect(slot)
+            b = box.addButton(text, QDialogButtonBox.ButtonRole.ActionRole)
+            b.clicked.connect(slot)
+            if getattr(slot, "__name__", "") == "delete":
+                b.setProperty("role", "danger")
         box.accepted.connect(self.confirm)
         box.rejected.connect(self.reject)
         QShortcut(QKeySequence("Ctrl+Return"), self, activated=self.confirm)
         QShortcut(QKeySequence("Ctrl+Enter"), self, activated=self.confirm)
         self.lay.addWidget(self.message)
         self.lay.addWidget(box)
+        # the fields' names quieter than what is typed, as the app's labels
+        for form in self.findChildren(QFormLayout):
+            for i in range(form.rowCount()):
+                item = form.itemAt(i, QFormLayout.ItemRole.LabelRole)
+                if item is not None and isinstance(item.widget(), QLabel):
+                    item.widget().setProperty("role", "field")
 
 
 class QuickEntry(_Dialog):
@@ -239,7 +288,7 @@ class QuickEntry(_Dialog):
         self.result_uid = None
         self.setMinimumWidth(520)
         p = work.policy
-        form = QFormLayout()
+        form = _wrapped()
         self.description = Description()
         form.addRow(field_label(p, "description"), self.description)
         self.client = MasterCombo(work, "client")
@@ -254,7 +303,7 @@ class QuickEntry(_Dialog):
             self.description.setPlainText(todo.get("title") or "")
             self.client.set_value(todo.get("clientUid"))
         hint = QLabel(_("Ctrl+Invio per avviare"))
-        hint.setStyleSheet("color: palette(placeholder-text)")
+        hint.setProperty("role", "small")
         self.lay.addWidget(hint)
         self.buttons(_("Avvia"), [(_("Altri campi…"), self.more)])
         self.description.setFocus()
@@ -293,6 +342,7 @@ class EntryDialog(_Dialog):
         p = work.policy
         e = work.entry(uid) if uid else {}
         form = QFormLayout()
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.fields = {}
 
         def add(name, widget):
@@ -384,18 +434,18 @@ class EntryDialog(_Dialog):
             row.addWidget(QLabel(f"{KINDS.get(s['kind'], s['kind'])}  {clock(s['startUtcMs'])} – {end}"))
             row.addStretch()
             if editable:
-                row.addWidget(QPushButton(_("Modifica…"), clicked=lambda _c=False, s=s: self._segment(s)))
+                row.addWidget(W.icon_button("edit", _("Modifica…"), lambda s=s: self._segment(s)))
                 if s.get("endUtcMs"):
-                    row.addWidget(QPushButton(_("Elimina"), clicked=lambda _c=False, s=s: self._remove(s)))
+                    row.addWidget(W.icon_button("clear", _("Elimina"), lambda s=s: self._remove(s)))
             lay.addLayout(row)
         if editable and e.get("status") != ACTIVE:
             row = QHBoxLayout()
             row.addStretch()
-            row.addWidget(QPushButton(_("Aggiungi un tratto…"), clicked=lambda: self._segment(None)))
+            row.addWidget(W.button(_("Aggiungi un tratto…"), lambda: self._segment(None), "tonal", "add"))
             lay.addLayout(row)
         if e.get("needsReview"):
             warn = QLabel(_("Da verificare: due tratti si sovrappongono."))
-            warn.setStyleSheet("color: #c62828")
+            warn.setProperty("role", "error")
             lay.addWidget(warn)
         self.lay.addWidget(box)
 
@@ -467,6 +517,7 @@ class SegmentDialog(_Dialog):
         super().__init__(_("Tratto") if segment else _("Nuovo tratto"), parent)
         self.work, self.entry_uid, self.segment = work, entry_uid, segment
         form = QFormLayout()
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.kind = QComboBox()
         for k in (WORK, TRAVEL, PAUSE):
             if k != TRAVEL or work.policy.feature("travel"):
@@ -514,7 +565,7 @@ class StopDialog(_Dialog):
         super().__init__(_("Completa l'attività"), parent)
         self.work, self.uid = work, uid
         e = work.entry(uid)
-        form = QFormLayout()
+        form = _wrapped()
         self.description = Description()
         self.description.setPlainText(e.get("activity") or "")
         form.addRow(field_label(work.policy, "description"), self.description)
@@ -639,6 +690,7 @@ class TodoDialog(_Dialog):
         p = work.policy
         t = todos.todo(uid) if uid else {}
         form = QFormLayout()
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.title = QLineEdit(t.get("title") or "")
         form.addRow(_("Titolo"), self.title)
         self.company = MasterCombo(work, "company")

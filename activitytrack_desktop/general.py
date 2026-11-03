@@ -110,15 +110,17 @@ class GeneralPanel(QWidget):
         super().__init__(parent)
         self.actions, self.updater = actions, updater
         lay = QVBoxLayout(self)
-        title = QLabel(_("Generale"))
-        title.setStyleSheet("font-size: 18pt")
-        lay.addWidget(title)
+        lay.setContentsMargins(0, 0, 0, 0)
+        start = QGroupBox(_("Avvio"))
+        sl = QVBoxLayout(start)
         self.autostart = QCheckBox(_("Avvia ActivityTrack all'accesso, nell'area di notifica"))
         self.autostart.toggled.connect(self._autostart)
-        lay.addWidget(self.autostart)
+        sl.addWidget(self.autostart)
+        lay.addWidget(start)
         # dates and times as on ActivityTrack Web; the command line and the terminal follow
         shown = QGroupBox(_("Date e orari"))
         fl = QFormLayout(shown)
+        fl.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
         self.date_format = QComboBox()
         for value, text in ((formats.EU, _("europeo (31/12/2026)")), (formats.US, _("americano (12/31/2026)")),
                             (formats.ISO, _("ISO (2026-12-31)"))):
@@ -148,7 +150,9 @@ class GeneralPanel(QWidget):
         bl.addLayout(row)
         lay.addWidget(box)
         lay.addStretch()
-        lay.addWidget(QLabel(f"ActivityTrack Desktop {__version__}"))
+        version = QLabel(f"ActivityTrack Desktop {__version__}")
+        version.setProperty("role", "small")
+        lay.addWidget(version)
         updater.found.connect(self._found)
         self.refresh()
 
