@@ -2,7 +2,7 @@
 """
 System-wide keyboard shortcuts: one backend per desktop, chosen at run
 time. Windows: RegisterHotKey; X11: XGrabKey on the root window
-(python3-xlib, optional); Wayland: the GlobalShortcuts portal, where the
+(python3-xlib, optional); Wayland: the GlobalShortcuts portal (jeepney), where the
 desktop asks the user to confirm the keys. Each backend takes
 {action: QKeySequence} and emits [activated](action).
 """
@@ -280,7 +280,14 @@ PORTAL = "org.freedesktop.portal.Desktop"
 PORTAL_PATH = "/org/freedesktop/portal/desktop"
 SHORTCUTS = "org.freedesktop.portal.GlobalShortcuts"
 REQUEST = "org.freedesktop.portal.Request"
+SESSION = "org.freedesktop.portal.Session"
+REGISTRY = "org.freedesktop.host.portal.Registry"
 APP_ID = "activitytrack-desktop"
+
+
+def _variant(value):
+    """The value of a variant as jeepney reads it ((signature, value)), or the value itself."""
+    return value[1] if isinstance(value, tuple) and len(value) == 2 and isinstance(value[0], str) else value
 
 
 class PortalBackend(Backend):
@@ -288,16 +295,22 @@ class PortalBackend(Backend):
     The XDG desktop portal's GlobalShortcuts (KDE Plasma 6, GNOME 48 and
     later): a session, its shortcuts bound with the keys as a preference,
     which the desktop confirms with the user; [Activated] when pressed.
+
+    Over jeepney (QtDBus cannot send the portal's a(sa{sv}) from Python):
+    its blocking connection, read in the GUI thread when a socket notifier
+    says data came, receive(timeout=0) until nothing is left. No thread,
+    no locking; only the first calls (open) wait for their reply.
     """
 
     WAITING, BOUND, REFUSED, FAILED = "waiting", "bound", "refused", "failed"
 
-    def __init__(self, parent=None, bus=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.bus = bus
+        self.conn = None
         self.session = None
         self.status = None
         self.triggers = {}
+        self.replies = {}       # serial -> callback(message)
         self.requests = {}      # request path -> callback(code, results)
         self._generation = 0
 
@@ -307,99 +320,143 @@ class PortalBackend(Backend):
     def open(self):
         if not sys.platform.startswith("linux"):
             return _("non è Linux")
-        from . import dbuswire
-        if self.bus is None:
-            try:
-                self.bus = dbuswire.Bus()
-            except (OSError, dbuswire.DBusError, TimeoutError) as e:
-                return _("bus di sessione non raggiungibile (%s)") % (str(e) or type(e).__name__)
+        try:
+            from jeepney import DBusAddress, DBusErrorResponse, MatchRule, Properties, message_bus, new_method_call
+            from jeepney.io.blocking import open_dbus_connection
+        except ImportError:
+            return _("manca python3-jeepney")
+        try:
+            self.conn = open_dbus_connection("SESSION")
+        except Exception as e:
+            # no address (KeyError), no socket, refused authentication…
+            return _("bus di sessione non raggiungibile (%s)") % (str(e) or type(e).__name__)
         try:
             # a program outside a sandbox tells the portal who it is, before any other call
-            self.bus.call_sync(PORTAL, PORTAL_PATH, "org.freedesktop.host.portal.Registry", "Register", "sa{sv}",
-                               [APP_ID, {}])
-        except (dbuswire.DBusError, TimeoutError):
+            self._call_sync(new_method_call(DBusAddress(PORTAL_PATH, PORTAL, REGISTRY), "Register", "sa{sv}",
+                                            (APP_ID, {})))
+        except (DBusErrorResponse, TimeoutError):
             pass
         try:
-            self.version = self.bus.call_sync(PORTAL, PORTAL_PATH, "org.freedesktop.DBus.Properties", "Get", "ss",
-                                              [SHORTCUTS, "version"], timeout=5)[0]
-        except (dbuswire.DBusError, TimeoutError):
-            self.bus.close()
+            self._call_sync(Properties(DBusAddress(PORTAL_PATH, PORTAL, SHORTCUTS)).get("version"), timeout=5)
+            for interface in (REQUEST, SHORTCUTS):
+                self._call_sync(message_bus.AddMatch(MatchRule(type="signal", interface=interface)))
+        except (DBusErrorResponse, TimeoutError, OSError):
+            self.conn.close()
+            self.conn = None
             return _("il desktop non offre il portale GlobalShortcuts")
-        self.bus.on_signal(REQUEST, "Response", self._response)
-        self.bus.on_signal(SHORTCUTS, "Activated", self._activated)
+        self.notifier = QSocketNotifier(self.conn.sock.fileno(), QSocketNotifier.Type.Read, self)
+        self.notifier.activated.connect(self._read)
+        # what came with the replies above waits in jeepney's buffer, not on the socket
+        self._read()
         return None
+
+    def _call_sync(self, msg, timeout=3):
+        from jeepney.wrappers import unwrap_msg
+        return unwrap_msg(self.conn.send_and_get_reply(msg, timeout=timeout))
+
+    def _call(self, path, interface, member, signature=None, body=(), reply=None):
+        from jeepney import DBusAddress, new_method_call
+        msg = new_method_call(DBusAddress(path, PORTAL, interface), member, signature, body)
+        serial = next(self.conn.outgoing_serial)
+        if reply is not None:
+            self.replies[serial] = reply
+        self.conn.send(msg, serial=serial)
+
+    def _read(self, *_args):
+        from jeepney import HeaderFields, MessageType
+        while self.conn is not None:
+            try:
+                msg = self.conn.receive(timeout=0)
+            except TimeoutError:
+                return
+            except OSError:
+                # the bus went away
+                self.notifier.setEnabled(False)
+                self.conn = None
+                self._done(2)
+                return
+            fields = msg.header.fields
+            kind = msg.header.message_type
+            if kind in (MessageType.method_return, MessageType.error):
+                callback = self.replies.pop(fields.get(HeaderFields.reply_serial), None)
+                if callback is not None:
+                    callback(msg)
+            elif kind == MessageType.signal:
+                interface, member = fields.get(HeaderFields.interface), fields.get(HeaderFields.member)
+                if (interface, member) == (REQUEST, "Response"):
+                    callback = self.requests.pop(fields.get(HeaderFields.path), None)
+                    if callback is not None and len(msg.body) >= 2:
+                        callback(int(msg.body[0]), msg.body[1] or {})
+                elif (interface, member) == (SHORTCUTS, "Activated"):
+                    self._activated(msg.body)
 
     def _request(self, member, signature, body, callback):
         """A portal call with its Request: [callback](code, results) when the Response comes."""
+        from jeepney import MessageType
         token = "atdesk" + secrets.token_hex(6)
-        sender = self.bus.unique_name.lstrip(":").replace(".", "_")
+        sender = self.conn.unique_name.lstrip(":").replace(".", "_")
         path = f"{PORTAL_PATH}/request/{sender}/{token}"
         self.requests[path] = callback
-        options = body[-1]
-        options["handle_token"] = token
+        body[-1]["handle_token"] = ("s", token)
 
-        def replied(m):
-            from .dbuswire import ERROR
-            if m.type == ERROR:
+        def replied(msg):
+            if msg.header.message_type == MessageType.error:
                 self.requests.pop(path, None)
-                callback(2, {"error": m.error})
-            elif m.body and m.body[0] != path:
+                callback(2, {})
+            elif msg.body and msg.body[0] != path:
                 # an old portal: its own path
-                self.requests[m.body[0]] = self.requests.pop(path, callback)
-        self.bus.call(PORTAL, PORTAL_PATH, SHORTCUTS, member, signature, body, reply=replied)
-
-    def _response(self, m):
-        callback = self.requests.pop(m.path, None)
-        if callback is not None and len(m.body) >= 2:
-            callback(int(m.body[0]), m.body[1] or {})
+                self.requests[msg.body[0]] = self.requests.pop(path, callback)
+        self._call(PORTAL_PATH, SHORTCUTS, member, signature, tuple(body), reply=replied)
 
     def bind(self, bindings):
         self._generation += 1
         generation = self._generation
         self.errors, self.triggers = {}, {}
         if self.session:
-            self.bus.call(PORTAL, self.session, "org.freedesktop.portal.Session", "Close")
+            self._call(self.session, SESSION, "Close")
             self.session = None
-        if not bindings:
-            self.status = None
+        if not bindings or self.conn is None:
+            self.status = None if self.conn is not None else self.FAILED
             self.changed.emit()
             return
         self.status = self.WAITING
         self.changed.emit()
-        shortcuts = [(action, {"description": action_names().get(action, action),
-                               "preferred_trigger": portal_trigger(seq)}) for action, seq in sorted(bindings.items())]
+        shortcuts = [(action, {"description": ("s", action_names().get(action, action)),
+                               "preferred_trigger": ("s", portal_trigger(seq))})
+                     for action, seq in sorted(bindings.items())]
 
         def created(code, results):
             if generation != self._generation:
                 return
-            if code != 0 or not results.get("session_handle"):
+            session = _variant(results.get("session_handle"))
+            if code != 0 or not session:
                 return self._done(code)
-            self.session = str(results["session_handle"])
+            self.session = str(session)
             self._request("BindShortcuts", "oa(sa{sv})sa{sv}", [self.session, shortcuts, "", {}], bound)
 
         def bound(code, results):
             if generation != self._generation:
                 return
             if code == 0:
-                for action, props in results.get("shortcuts") or []:
-                    self.triggers[action] = (props or {}).get("trigger_description", "")
+                for action, props in _variant(results.get("shortcuts")) or []:
+                    self.triggers[action] = _variant((props or {}).get("trigger_description", ""))
             self._done(code)
 
-        self._request("CreateSession", "a{sv}", [{"session_handle_token": "atdesk" + secrets.token_hex(6)}],
+        self._request("CreateSession", "a{sv}", [{"session_handle_token": ("s", "atdesk" + secrets.token_hex(6))}],
                       created)
 
     def _done(self, code):
         self.status = {0: self.BOUND, 1: self.REFUSED}.get(code, self.FAILED)
         self.changed.emit()
 
-    def _activated(self, m):
-        if len(m.body) >= 2 and self.session and str(m.body[0]) == self.session:
-            options = m.body[3] if len(m.body) > 3 and isinstance(m.body[3], dict) else {}
-            token = options.get("activation_token")
+    def _activated(self, body):
+        if len(body) >= 2 and self.session and str(body[0]) == self.session:
+            options = body[3] if len(body) > 3 and isinstance(body[3], dict) else {}
+            token = _variant(options.get("activation_token"))
             if token:
                 # Wayland: the window the shortcut opens may take the focus with it
                 os.environ["XDG_ACTIVATION_TOKEN"] = str(token)
-            self.activated.emit(str(m.body[1]))
+            self.activated.emit(str(body[1]))
 
     def state(self):
         if self.status == self.WAITING:
@@ -413,10 +470,12 @@ class PortalBackend(Backend):
         return ""
 
     def close(self):
-        if self.bus is not None and self.bus.sock is not None:
+        if self.conn is not None:
             if self.session:
-                self.bus.call(PORTAL, self.session, "org.freedesktop.portal.Session", "Close")
-            self.bus.close()
+                self._call(self.session, SESSION, "Close")
+            self.notifier.setEnabled(False)
+            self.conn.close()
+            self.conn = None
         self.session = None
 
 
