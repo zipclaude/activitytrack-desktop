@@ -21,11 +21,18 @@ From the [releases](https://github.com/zipclaude/activitytrack-desktop/releases)
   (the library from its own release),
   then start *ActivityTrack* from the menu.
 - **Other distributions**: install Python 3.11 or newer, PyQt6, cryptography and keyring
-  from the distribution, unpack `activitytrack-desktop-<version>.tar.gz` and run
+  (and python-xlib for the global keyboard shortcuts on X11; optional) from the distribution, unpack `activitytrack-desktop-<version>.tar.gz` and run
   `python3 -m activitytrack_desktop` in its folder.
 
 Then, on the web, open **Dispositivi** → **Associa un dispositivo**, copy the link and paste it in
 the window that opens at the first start.
+
+Global keyboard shortcuts (Settings → Generale → Scorciatoie globali): **Ctrl+Alt+A** new
+activity, **Ctrl+Alt+P** pause or resume, **Ctrl+Alt+S** stop. They use RegisterHotKey on Windows,
+python-xlib on X11 (the `.deb` depends on `python3-xlib`; from the tarball install it from the
+distribution) and the desktop portal's GlobalShortcuts on Wayland (KDE Plasma 6, GNOME 48+, which
+ask to confirm the keys). Anywhere, a desktop shortcut can run `activitytrack-desktop --start`,
+`--pause` or `--stop`, which go to the running instance (started when there is none).
 
 The desktop needs a notification area: native on KDE Plasma; on XFCE the panel's
 "Status Tray" (or "Notification Area") plugin.

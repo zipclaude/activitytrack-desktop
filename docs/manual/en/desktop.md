@@ -212,7 +212,51 @@ The **Generale** tab has:
   shows it with **"Scarica"** (download). **"Anche le versioni beta"** (betas
   too) includes the test versions. The policy may fix both.
 
-## 9. The policy on the PC
+## 9. Keyboard shortcuts
+
+Three key combinations work from any program, even with ActivityTrack's
+window closed:
+
+| Keys | What they do |
+|---|---|
+| **Ctrl+Alt+A** | opens the new activity's window in front |
+| **Ctrl+Alt+P** | pauses the activity at work or travelling (the most recent); when there is none, resumes the one on pause, else the latest suspended |
+| **Ctrl+Alt+S** | stops the running activity; when details are missing it opens the sheet to complete it in front |
+
+When more than one activity qualifies (concurrent activities), a small window
+asks which. Pause, resume and stop are confirmed by a notification.
+
+In **Generale** → **Scorciatoie globali** (global shortcuts) each one is
+switched on or off and takes other keys (Ctrl, Alt or Super are needed, except
+for the function keys); **"Ripristina predefinite"** (restore defaults) goes
+back to the ones above. The line below says how they work on this desktop:
+
+- **Windows**: directly;
+- **Linux on X11** (XFCE, KDE or GNOME on X11): with the `python3-xlib`
+  package, which the `.deb` package installs; with the `.tar.gz`, install it
+  from the distribution;
+- **Linux on Wayland** (KDE Plasma 6, GNOME 48 or later): through the
+  desktop portal. The first time the desktop asks to confirm the keys; then
+  they are changed in its settings (KDE: System Settings → Shortcuts; GNOME:
+  Settings → Keyboard → Shortcuts). On Wayland the desktop may not bring the
+  window in front of the others: it flashes in the task bar instead.
+
+When a key is already taken by another program, the line says so. Where the
+shortcuts are not available, or to use keys of your own, assign a desktop
+shortcut to one of these commands:
+
+```sh
+activitytrack-desktop --start    # new activity
+activitytrack-desktop --pause    # pause or resume
+activitytrack-desktop --stop     # stop
+```
+
+The command goes to the ActivityTrack already open; when it is not open it
+starts it in the notification area and runs the command. On Windows the
+program is `ActivityTrack.exe` in the installation folder
+(`%LOCALAPPDATA%\Programs\ActivityTrack`), with the same options.
+
+## 10. The policy on the PC
 
 The PC gets the phone's policy and applies the keys that concern it: features
 (activities, travels, to-dos, planning, ignoring and deleting), fields (names,
@@ -220,10 +264,11 @@ required, hidden, read-only), editable times, free tags, activities only from
 *To-dos*, central master data only, reminder intervals, updates. The
 phone-only keys (location, calls, widgets…) do not concern it.
 
-## 10. Common problems
+## 11. Common problems
 
 | Problem | What to do |
 |---|---|
+| A shortcut does not work | Read the line under **Scorciatoie globali** in **Generale**: the key may be taken by another program, or `python3-xlib` may be missing (X11). Otherwise assign `activitytrack-desktop --pause` (or `--start`, `--stop`) to a key in the desktop's settings |
 | The icon does not show | XFCE: add the notification area to the panel. GNOME: the AppIndicator extension is needed |
 | Windows: "Windows protected your PC" | The program is not signed: "More info" → "Run anyway" |
 | "Codice scaduto o già usato" (code expired or used) | The link is good for 10 minutes and once: make another on the web |
