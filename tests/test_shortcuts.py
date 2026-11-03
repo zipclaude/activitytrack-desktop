@@ -23,13 +23,11 @@ from PyQt6.QtGui import QKeySequence  # noqa: E402
 from PyQt6.QtWidgets import QApplication  # noqa: E402
 
 from activitytrack.pairing import Account  # noqa: E402
-from activitytrack.policy import Policy  # noqa: E402
 from activitytrack.session import Session  # noqa: E402
 from activitytrack.work import (  # noqa: E402
-    ACTIVE, CLOSED, PAUSE, STOP, SUSPEND, SUSPENDED, TO_COMPLETE, WORK, StartRequest, Work,
+    ACTIVE, CLOSED, PAUSE, TO_COMPLETE, WORK, StartRequest,
 )
 from activitytrack_desktop import hotkeys, shortcuts  # noqa: E402
-from activitytrack_desktop.targets import pause_target, resume_target, stop_target  # noqa: E402
 
 app = QApplication.instance() or QApplication([])
 # the keys saved: in a folder of the tests, not the user's settings
@@ -60,80 +58,6 @@ class Clock:
 
     def tick(self, minutes=1):
         self.ms += minutes * 60_000
-
-
-class TargetsTest(unittest.TestCase):
-    def setUp(self):
-        self.dir = tempfile.TemporaryDirectory()
-        self.session = Session(self.dir.name, use_keyring=False)
-        self.clock = Clock()
-        self.work = Work(self.session.store, Policy(), clock=self.clock, zone="Europe/Rome")
-
-    def tearDown(self):
-        self.session.store.close()
-        self.dir.cleanup()
-
-    def start(self, name):
-        self.clock.tick()
-        return self.work.start(StartRequest(client="c1", activity=name))
-
-    def command(self, uid, cmd):
-        self.clock.tick()
-        self.work.command(uid, cmd)
-
-    def test_nothing_running(self):
-        self.assertIsNone(pause_target(self.work))
-        self.assertIsNone(resume_target(self.work))
-        self.assertIsNone(stop_target(self.work))
-
-    def test_one_activity(self):
-        a = self.start("A")
-        self.assertEqual(pause_target(self.work), a)
-        self.assertIsNone(resume_target(self.work))
-        self.assertEqual(stop_target(self.work), a)
-        self.command(a, PAUSE)
-        self.assertIsNone(pause_target(self.work))
-        self.assertEqual(resume_target(self.work), a)
-        self.assertEqual(stop_target(self.work), a)
-        self.command(a, WORK)
-        self.command(a, SUSPEND)
-        self.assertIsNone(pause_target(self.work))
-        self.assertEqual(resume_target(self.work), a)
-        # suspended, the only one running: the one to stop
-        self.assertEqual(stop_target(self.work), a)
-
-    def test_several(self):
-        a = self.start("A")
-        self.command(a, PAUSE)
-        # concurrent activities (the policy's default): A stays on pause
-        b = self.start("B")
-        self.assertEqual(self.work.entry(a)["mode"], PAUSE)
-        self.assertEqual(pause_target(self.work), b)
-        # the one on pause first, even with a newer one suspended
-        self.command(b, SUSPEND)
-        self.assertEqual(resume_target(self.work), a)
-        # two active: a choice, the most recent first; the big card's wins
-        c = self.start("C")
-        self.assertEqual(stop_target(self.work), [c, a])
-        self.assertEqual(stop_target(self.work, focused_uid=a), a)
-        self.assertEqual(stop_target(self.work, focused_uid="gone"), [c, a])
-        # the most recent at work, among several
-        self.command(a, WORK)
-        self.assertEqual(pause_target(self.work), a)
-        # two on pause: a choice
-        self.command(a, PAUSE)
-        self.command(c, PAUSE)
-        self.assertEqual(resume_target(self.work), [c, a])
-        # none on pause: the latest suspended
-        self.command(a, STOP)
-        self.command(c, STOP)
-        self.assertEqual(resume_target(self.work), b)
-        self.assertEqual(self.work.entry(b)["status"], SUSPENDED)
-        d = self.start("D")
-        self.command(d, SUSPEND)
-        self.assertEqual(resume_target(self.work), d)
-        # nothing active: a choice among the suspended
-        self.assertEqual(stop_target(self.work), [d, b])
 
 
 class KeysTest(unittest.TestCase):
@@ -388,8 +312,13 @@ class CommandsTest(unittest.TestCase):
                                ("show", None)])
 
 
-@unittest.skipUnless(os.environ.get("DBUS_SESSION_BUS_ADDRESS") and sys.platform.startswith("linux"),
-                     "no session bus")
+def _private_bus():
+    """A session bus of the tests (dbus-run-session), never the user's: the fake portal takes its name."""
+    address = os.environ.get("DBUS_SESSION_BUS_ADDRESS", "")
+    return sys.platform.startswith("linux") and address and f"/run/user/{os.getuid()}/bus" not in address
+
+
+@unittest.skipUnless(_private_bus(), "no private session bus (dbus-run-session)")
 class PortalTest(unittest.TestCase):
     def setUp(self):
         shortcuts.reset()

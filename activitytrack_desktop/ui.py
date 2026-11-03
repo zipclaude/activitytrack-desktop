@@ -382,6 +382,11 @@ class MainWindow(QMainWindow):
         if hasattr(page, "focus_search"):
             page.focus_search()
 
+    @property
+    def focused_uid(self):
+        """The activity of the Home's big card: what the stop shortcuts act on."""
+        return self.home.big_uid if self.home else None
+
     def show_section(self, key, panel=None):
         section = next((s for s in self.sections if s.key == key), None)
         if section is None or not section.shown(self):

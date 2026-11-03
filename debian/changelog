@@ -1,3 +1,20 @@
+activitytrack-desktop (0.9.4~beta5-1-1) unstable; urgency=medium
+
+  * The look and the use of the phone's app: Material 3 light or dark as
+    the system, the Home's big card with round buttons and small cards,
+    the list with state marks, filter chips, a rail with Home, Da fare
+    and Impostazioni.
+  * Keyboard shortcuts in the window (Ctrl+N, Ctrl+P, Ctrl+T, Ctrl+D,
+    Ctrl+F, Ctrl+1..3, F5) and system-wide ones (Ctrl+Alt+A start,
+    Ctrl+Alt+P pause/resume, Ctrl+Alt+S stop), configurable: Windows,
+    X11 (python3-xlib), Wayland through the desktop portal (python3-jeepney);
+    and --start, --pause, --stop for the desktop's own shortcuts.
+  * Fix: the sync worker no longer closes the store after each run, which
+    with python3-activitytrack 0.9.4-beta5 closed the window's connection
+    and stopped the application after the first sync.
+
+ -- ActivityTrack <flavio-claude@zipman.it>  Tue, 03 Nov 2026 13:16:29 +0100
+
 activitytrack-desktop (0.9.4~beta5-1) unstable; urgency=medium
 
   * Security review fixes: the single-instance socket in the user's

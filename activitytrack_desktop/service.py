@@ -34,11 +34,9 @@ class _Worker(QObject):
     @Slot(bool)
     def run(self, full):
         """[full]: sync even when the server did not move."""
-        try:
-            self.finished.emit(*self.runner.run(full))
-        finally:
-            # the worker thread's connection: the next run may come after a long sleep
-            self.session.store.close()
+        # the worker's connection stays open between runs: closing the store would close
+        # every thread's, the window's too (python3-activitytrack 0.9.4-beta5)
+        self.finished.emit(*self.runner.run(full))
 
 
 class SyncService(QObject):
