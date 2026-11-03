@@ -8,7 +8,7 @@ import sys
 import traceback
 from pathlib import Path
 
-from PyQt6.QtCore import QLibraryInfo, QLocale, QTranslator
+from PyQt6.QtCore import QLibraryInfo, QLocale, QTimer, QTranslator
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 from PyQt6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
@@ -21,12 +21,20 @@ from . import __version__
 APP_ID = "activitytrack-desktop"
 
 
-def _already_running(name):
-    """Asks a running instance to show its window; True when there is one."""
+def _already_running(name, command=None):
+    """
+    Asks a running instance to show its window, or to run [command] (start,
+    pause, stop: shortcuts.COMMANDS); True when there is one. The line
+    carries the launcher's activation token, for the focus on Wayland.
+    """
     s = QLocalSocket()
     s.connectToServer(name)
     if s.waitForConnected(500):
-        s.write(b"show\n")
+        line = command or "show"
+        token = os.environ.get("XDG_ACTIVATION_TOKEN", "")
+        if token and token.isprintable() and " " not in token:
+            line += " " + token
+        s.write(line.encode() + b"\n")
         s.flush()
         s.waitForBytesWritten(500)
         s.disconnectFromServer()
@@ -101,6 +109,7 @@ def _selftest(app, out):
     from .notify import Notifier
     from .reminder_ui import Reminders
     from .service import SyncService
+    from .shortcuts import Commands, GlobalShortcuts, ShortcutsBox
     from activitytrack.session import Session
     from .ui import MainWindow, Tray
 
@@ -113,6 +122,9 @@ def _selftest(app, out):
             window = MainWindow(session, service, actions, notifier)
             Tray(session, service, window, lambda: None, actions)
             Reminders(actions, notifier, window.show_up).arm()
+            Commands(actions, window, notifier)
+            # no backend: a check must not take the user's keys
+            ShortcutsBox(GlobalShortcuts(backends={}))
             window.quitting = True
             service.stop()
             session.store.close()
@@ -132,6 +144,14 @@ def main(argv=None):
     parser.add_argument("--hidden", action="store_true", help="start in the tray only (autostart)")
     parser.add_argument("--data", help="data folder (default: the user's application data)")
     parser.add_argument("--dev", action="store_true", help="development: allow http:// servers")
+    # for the desktop's own keyboard shortcuts: sent to the running instance, which starts when there is none
+    command = parser.add_mutually_exclusive_group()
+    command.add_argument("--start", dest="command", action="store_const", const="start",
+                         help="open the new activity's window")
+    command.add_argument("--pause", dest="command", action="store_const", const="pause",
+                         help="pause the activity at work, or resume the one paused")
+    command.add_argument("--stop", dest="command", action="store_const", const="stop",
+                         help="stop the running activity")
     # the packages' check: everything built on an empty folder, the outcome in a file (no console on Windows)
     parser.add_argument("--selftest", metavar="FILE", help=argparse.SUPPRESS)
     args, qt_args = parser.parse_known_args(argv if argv is not None else sys.argv[1:])
@@ -152,7 +172,7 @@ def main(argv=None):
     _log_errors(folder)
     # one instance per data folder: a local socket on Linux, a named pipe on Windows
     name = _socket_name(folder)
-    if _already_running(name):
+    if _already_running(name, args.command):
         return 0
     QLocalServer.removeServer(name)
     server = QLocalServer()
@@ -186,6 +206,14 @@ def main(argv=None):
 
     notifier = Notifier()
     window = MainWindow(session, service, actions, notifier)
+    from .shortcuts import Commands, GlobalShortcuts, ShortcutsBox
+
+    commands = Commands(actions, window, notifier)
+    shortcuts = GlobalShortcuts()
+    shortcuts.triggered.connect(commands.run)
+    shortcuts.apply()
+    if window.general is not None:
+        window.general.add_group(ShortcutsBox(shortcuts))
 
     quitting = []
 
@@ -195,6 +223,7 @@ def main(argv=None):
             return
         quitting.append(True)
         window.quitting = True
+        shortcuts.close()
         if not service.stop():
             _log(folder, "quit: the sync did not stop in time, left to the end of the process")
         app.quit()
@@ -204,7 +233,11 @@ def main(argv=None):
 
     def on_connection():
         c = server.nextPendingConnection()
-        c.readyRead.connect(window.show_up)
+
+        def read():
+            while c.canReadLine():
+                commands.received(bytes(c.readLine()).decode("utf-8", "replace"))
+        c.readyRead.connect(read)
         c.disconnected.connect(c.deleteLater)
 
     server.newConnection.connect(on_connection)
@@ -224,13 +257,16 @@ def main(argv=None):
             event.accept()
             quit_app()
         window.closeEvent = close_event
-    if not args.hidden or tray is None or session.account is None:
+    # a command at the start: the tray, and the command's window
+    if not (args.hidden or args.command) or tray is None or session.account is None:
         window.show_up()
     from .general import first_start
     first_start()
     reminders = Reminders(actions, notifier, window.show_up)
     reminders.arm()
     service.start()
+    if args.command:
+        QTimer.singleShot(0, lambda: commands.run(args.command))
     code = app.exec()
     # the socket's file goes: the process may end without deleting the server
     server.close()

@@ -156,6 +156,12 @@ class GeneralPanel(QWidget):
         updater.found.connect(self._found)
         self.refresh()
 
+    def add_group(self, box):
+        """Another group of settings (the keyboard shortcuts), after the others."""
+        lay = self.layout()
+        # before the stretch and the version
+        lay.insertWidget(lay.count() - 2, box)
+
     def refresh(self):
         p = self.actions.work.policy
         self.autostart.blockSignals(True)

@@ -86,3 +86,76 @@ class WithoutTrayTest(unittest.TestCase):
             self.assertIn("stops 1", r.stdout)
             self.assertNotIn("Traceback", r.stderr)
             self.assertFalse((Path(d) / "data" / "errors.log").exists())
+
+
+# an instance whose commands are only written: they reach it through the single instance's socket
+INSTANCE = """
+import sys
+from PyQt6.QtCore import QTimer
+from PyQt6.QtWidgets import QApplication
+import activitytrack_desktop.general as G
+import activitytrack_desktop.main as M
+import activitytrack_desktop.service as S
+import activitytrack_desktop.shortcuts as SC
+M.QSystemTrayIcon.isSystemTrayAvailable = staticmethod(lambda: False)
+M.QMessageBox.information = staticmethod(lambda *a, **k: None)
+G.first_start = lambda: None
+S.SyncService.sync = lambda self, full=False: None
+expected = int(sys.argv[2])
+ran = []
+
+
+def run(self, command, token=None):
+    ran.append(command)
+    print("ran", command, token, flush=True)
+    if len(ran) == expected:
+        QApplication.exit(0)
+SC.Commands.run = run
+start = S.SyncService.start
+
+
+def started(self):
+    start(self)
+    print("ready", flush=True)
+    QTimer.singleShot(30_000, lambda: QApplication.exit(9))
+S.SyncService.start = started
+sys.exit(M.main(["--data", sys.argv[1], *sys.argv[3:]]))
+"""
+
+SECOND = "import sys, activitytrack_desktop.main as M; sys.exit(M.main(['--data', sys.argv[1], sys.argv[2]]))"
+
+
+class CommandLineTest(unittest.TestCase):
+    def env(self, d, **more):
+        return dict(os.environ, QT_QPA_PLATFORM="offscreen", XDG_CONFIG_HOME=d, PYTHONPATH=os.pathsep.join(
+            [str(Path(main.__file__).parent.parent), *sys.path]), **more)
+
+    def test_the_commands_reach_the_running_instance(self):
+        with tempfile.TemporaryDirectory() as d:
+            data = str(Path(d) / "data")
+            env = {k: v for k, v in self.env(d).items() if k != "XDG_ACTIVATION_TOKEN"}
+            first = subprocess.Popen([sys.executable, "-c", INSTANCE, data, "3"], env=env, stdout=subprocess.PIPE,
+                                     stderr=subprocess.PIPE, text=True)
+            try:
+                self.assertEqual(first.stdout.readline().strip(), "ready")
+                for option, more in (("--pause", {"XDG_ACTIVATION_TOKEN": "tok-1"}), ("--stop", {}),
+                                     ("--start", {})):
+                    r = subprocess.run([sys.executable, "-c", SECOND, data, option], env=dict(env, **more),
+                                       capture_output=True, text=True, timeout=60)
+                    self.assertEqual(r.returncode, 0, r.stderr)
+                out, err = first.communicate(timeout=60)
+            finally:
+                if first.poll() is None:
+                    first.kill()
+                    first.communicate()
+            self.assertEqual(first.returncode, 0, err)
+            self.assertEqual(out.split("\n")[:3], ["ran pause tok-1", "ran stop None", "ran start None"])
+            self.assertNotIn("Traceback", err)
+
+    def test_without_an_instance_it_starts_and_runs_the_command(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = subprocess.run([sys.executable, "-c", INSTANCE, str(Path(d) / "data"), "1", "--stop"],
+                               env=self.env(d), capture_output=True, text=True, timeout=60)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(r.stdout.split("\n")[:2], ["ready", "ran stop None"])
+            self.assertNotIn("Traceback", r.stderr)

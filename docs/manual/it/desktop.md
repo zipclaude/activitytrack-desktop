@@ -139,6 +139,9 @@ pulsanti le ricordano.
 Con più attività al lavoro insieme (quando la policy lo consente) Ctrl+P
 chiede quale, in un piccolo elenco: Invio sceglie la prima, la più recente.
 
+Avvio, pausa e stop hanno anche scorciatoie che funzionano da qualunque
+programma: §10.
+
 ## 6. Le attività
 
 ### Nuova attività
@@ -271,7 +274,53 @@ sull'altro dispositivo.
   versioni beta"** include le versioni di prova. La policy può fissare
   entrambe le scelte.
 
-## 10. La policy sul PC
+## 10. Scorciatoie globali
+
+Tre combinazioni di tasti funzionano da qualunque programma, anche con la
+finestra di ActivityTrack chiusa:
+
+| Tasti | Cosa fanno |
+|---|---|
+| **Ctrl+Alt+A** | apre in primo piano la finestra della nuova attività |
+| **Ctrl+Alt+P** | mette in pausa l'attività al lavoro o in viaggio (la più recente); se non ce n'è, riprende quella in pausa, altrimenti l'ultima sospesa |
+| **Ctrl+Alt+S** | ferma l'attività in corso; se mancano i dettagli apre in primo piano la scheda per completarla |
+
+Quando le attività candidate sono più d'una (attività contemporanee), una
+piccola finestra chiede quale. Pausa, ripresa e stop si confermano con una
+notifica.
+
+In **Generale** → **Scorciatoie globali** ciascuna si accende o si spegne e
+prende altri tasti (servono Ctrl, Alt o Super, tranne per i tasti funzione);
+**"Ripristina predefinite"** torna a quelli sopra. La riga sotto dice come
+funzionano su questo desktop:
+
+- **Windows**: direttamente;
+- **Linux su X11** (XFCE, KDE o GNOME su X11): con il pacchetto
+  `python3-xlib`, che il pacchetto `.deb` installa; chi usa il `.tar.gz` lo
+  installa dalla distribuzione;
+- **Linux su Wayland** (KDE Plasma 6, GNOME 48 o successivi): attraverso il
+  portale del desktop. La prima volta il desktop chiede di confermare i tasti;
+  dopo si cambiano nelle sue impostazioni (KDE: Impostazioni di sistema →
+  Scorciatoie; GNOME: Impostazioni → Tastiera → Scorciatoie). Su Wayland il
+  desktop può non portare la finestra davanti alle altre: allora lampeggia
+  nella barra delle applicazioni.
+
+Se un tasto è già preso da un altro programma, la riga lo dice. Dove le
+scorciatoie non sono disponibili, o per usare tasti propri, si assegna una
+scorciatoia del desktop a uno di questi comandi:
+
+```sh
+activitytrack-desktop --start    # nuova attività
+activitytrack-desktop --pause    # pausa o ripresa
+activitytrack-desktop --stop     # stop
+```
+
+Il comando passa all'ActivityTrack già aperto; se non è aperto lo avvia
+nell'area di notifica ed esegue il comando. Su Windows il programma è
+`ActivityTrack.exe` nella cartella d'installazione
+(`%LOCALAPPDATA%\Programs\ActivityTrack`), con le stesse opzioni.
+
+## 11. La policy sul PC
 
 Il PC riceve la stessa policy del telefono e applica le chiavi che lo
 riguardano: funzioni (attività, viaggi, Da fare, pianificazione, ignorare ed
@@ -280,10 +329,11 @@ modificabili, tag liberi, attività solo dai *Da fare*, anagrafiche solo
 centrali, intervalli dei promemoria, aggiornamenti. Le chiavi solo del
 telefono (posizione, chiamate, widget…) non lo riguardano.
 
-## 11. Problemi comuni
+## 12. Problemi comuni
 
 | Problema | Cosa fare |
 |---|---|
+| Una scorciatoia non funziona | Leggi la riga sotto **Scorciatoie globali** in **Generale**: il tasto può essere preso da un altro programma, o mancare `python3-xlib` (X11). In alternativa assegna `activitytrack-desktop --pause` (o `--start`, `--stop`) a un tasto nelle impostazioni del desktop |
 | L'icona non si vede | XFCE: aggiungi al pannello l'area di notifica. GNOME: serve l'estensione AppIndicator |
 | Windows: "Windows ha protetto il PC" | Il programma non è firmato: "Ulteriori informazioni" → "Esegui comunque" |
 | "Codice scaduto o già usato" | Il collegamento vale 10 minuti e una volta: creane un altro sul web |
