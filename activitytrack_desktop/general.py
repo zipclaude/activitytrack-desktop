@@ -18,15 +18,15 @@ from activitytrack.i18n import _
 from . import __version__, autostart
 
 CHECK_EVERY_MS = 3600_000
-# the releases' pages: any other address in GitHub's answer is not opened
-RELEASES_SITE = "https://github.com/"
+# the releases' pages: any other address in GitLab's answer is not opened
+RELEASES_SITE = "https://gitlab.com/"
 
 
 def release_page(release):
-    """The page of [release], or the project's releases when GitHub's answer points elsewhere."""
+    """The page of [release], or the project's releases when GitLab's answer points elsewhere."""
     if release.url.startswith(RELEASES_SITE):
         return release.url
-    return f"{RELEASES_SITE}{updates.REPOSITORY}/releases"
+    return f"{RELEASES_SITE}{updates.REPOSITORY}/-/releases"
 
 
 def first_start():
@@ -55,7 +55,7 @@ def update_settings(policy):
 
 
 class Updates(QObject):
-    """Once a day, a newer release on GitHub: a notification that opens its page."""
+    """Once a day, a newer release on GitLab: a notification that opens its page."""
 
     found = Signal(object)
     _got = Signal(object, str)
@@ -96,7 +96,7 @@ class Updates(QObject):
         s = QSettings()
         if release is not None and s.value("updates/notified", "") != release.version:
             s.setValue("updates/notified", release.version)
-            body = _("Nuova versione beta su GitHub.") if release.beta else _("Nuova versione su GitHub.")
+            body = _("Nuova versione beta su GitLab.") if release.beta else _("Nuova versione su GitLab.")
             self.notifier.show(f"update|{release.version}", _("ActivityTrack %s disponibile") % release.version,
                                body, [("open", _("Scarica"))], persistent=False)
 
@@ -135,7 +135,7 @@ class GeneralPanel(QWidget):
         lay.addWidget(shown)
         box = QGroupBox(_("Aggiornamenti"))
         bl = QVBoxLayout(box)
-        self.check = QCheckBox(_("Controlla ogni giorno se c'è una versione nuova su GitHub"))
+        self.check = QCheckBox(_("Controlla ogni giorno se c'è una versione nuova su GitLab"))
         self.betas = QCheckBox(_("Anche le versioni beta"))
         self.check.toggled.connect(lambda on: self._save("updates/check", on))
         self.betas.toggled.connect(lambda on: self._save("updates/betas", on))
@@ -197,7 +197,7 @@ class GeneralPanel(QWidget):
 
     def _found(self, release):
         if self.updater.error:
-            self.result.setText(html.escape(_("GitHub non raggiungibile: %s") % self.updater.error))
+            self.result.setText(html.escape(_("GitLab non raggiungibile: %s") % self.updater.error))
         elif release is None:
             self.result.setText(_("Hai l'ultima versione."))
         else:

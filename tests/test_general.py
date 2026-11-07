@@ -10,11 +10,12 @@ from unittest import mock
 from activitytrack import updates
 from activitytrack_desktop import autostart
 
+# what GitLab answers: no pre-release flag (a tag with a suffix is a beta), "upcoming_release" for a release dated ahead
 RELEASES = json.dumps([
-    {"tag_name": "v0.9.4-beta1", "prerelease": True, "html_url": "https://x/b1"},
-    {"tag_name": "v0.9.3", "prerelease": False, "html_url": "https://x/093"},
-    {"tag_name": "v0.9.5", "draft": True},
-    {"tag_name": "v0.9.3-alfa1", "prerelease": True},
+    {"tag_name": "v0.9.4-beta1", "_links": {"self": "https://x/b1"}},
+    {"tag_name": "v0.9.3", "_links": {"self": "https://x/093"}},
+    {"tag_name": "v0.9.5", "upcoming_release": True},
+    {"tag_name": "v0.9.3-alfa1"},
 ])
 
 
