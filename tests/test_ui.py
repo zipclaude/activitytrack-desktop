@@ -460,7 +460,8 @@ class GeneralUiTest(unittest.TestCase):
     def test_only_gitlabs_pages_are_opened(self):
         from activitytrack import updates
         from activitytrack_desktop.general import release_page
-        good = updates.Release("0.9.5", "https://gitlab.com/infraconsulting/activitytrack-desktop/-/releases/v0.9.5", False)
+        good = updates.Release(
+            "0.9.5", "https://gitlab.com/infraconsulting/activitytrack-desktop/-/releases/v0.9.5", False)
         self.assertEqual(release_page(good), good.url)
         for url in ("https://evil.example.com/x", "https://gitlab.com.evil.example.com/x", "javascript:alert(1)",
                     "http://gitlab.com/x", ""):
