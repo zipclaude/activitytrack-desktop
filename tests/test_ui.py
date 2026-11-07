@@ -533,12 +533,13 @@ class GeneralUiTest(unittest.TestCase):
         self.assertFalse(self.panel.download.isHidden())
 
     def test_a_package_manager_installation_is_not_offered_the_download(self):
-        text, fingerprint = _signed(component="desktop-deb")
+        text, fingerprint = _signed(component="desktop-deb13")
         self.pair(fingerprint)
         self.session.store.set_state("update.manifest", text)
         shown = []
         self.notifier.show = lambda *a, **kw: shown.append(a)
-        with mock.patch("activitytrack.manifest.from_package_manager", return_value=True):
+        with mock.patch("activitytrack.manifest.from_package_manager", return_value=True), \
+                mock.patch("activitytrack.updates.distro", return_value="deb13"):
             self.updater.evaluate()
             self.assertEqual(len(shown), 1)
             self.assertEqual(list(shown[0][3]), [])
