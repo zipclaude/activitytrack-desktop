@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Settings → Generale: starting with the session and the update check (docs/DESIGN.md §6.3)."""
+"""Settings → Generale: starting with the session and the updates of the paired server (docs/DESIGN.md §6.3)."""
 
-import html
 import sys
 import threading
 import time
@@ -12,21 +11,13 @@ from PyQt6.QtWidgets import (
     QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
 
-from activitytrack import formats, updates
+from activitytrack import formats, texts, updates
 from activitytrack.i18n import _
+from activitytrack.sync import Runner
 
 from . import __version__, autostart
 
 CHECK_EVERY_MS = 3600_000
-# the releases' pages: any other address in GitLab's answer is not opened
-RELEASES_SITE = "https://gitlab.com/"
-
-
-def release_page(release):
-    """The page of [release], or the project's releases when GitLab's answer points elsewhere."""
-    if release.url.startswith(RELEASES_SITE):
-        return release.url
-    return f"{RELEASES_SITE}{updates.REPOSITORY}/-/releases"
 
 
 def first_start():
@@ -42,67 +33,85 @@ def first_start():
             pass
 
 
-def update_settings(policy):
-    """(check, betas): the user's choice, the policy's when it fixes them; a pre-release follows the betas."""
-    s = QSettings()
-    check = policy.setting("updateCheck", True)
-    betas = policy.setting("updateBetas", "-" in __version__)
-    if not policy.setting_fixed("updateCheck"):
-        check = s.value("updates/check", check, type=bool)
-    if not policy.setting_fixed("updateBetas"):
-        betas = s.value("updates/betas", betas, type=bool)
-    return check, betas
-
-
 class Updates(QObject):
-    """Once a day, a newer release on GitLab: a notification that opens its page."""
+    """
+    What the paired server says of a newer version (activitytrack#1): its manifest comes with each sync and
+    is checked against the key of the pairing link; asked again once a day. A notification once per version,
+    with the button to download when this installation can (the package manager's cannot); the package is
+    checked against its sha256 and then handed to the system.
+    """
 
     found = Signal(object)
-    _got = Signal(object, str)
+    # (path of the package or "", error)
+    downloaded = Signal(str, str)
+    _got = Signal(object)
+    _fetched = Signal(str, str)
 
-    def __init__(self, actions, notifier, parent=None):
+    def __init__(self, actions, notifier, service=None, parent=None):
         super().__init__(parent)
         self.actions, self.notifier = actions, notifier
-        self.latest = None
-        self.error = ""
+        self.core = updates.Updates(actions.session, Runner(actions.session), lambda: actions.work.policy)
+        self.status = updates.Status(updates.NONE)
         self._got.connect(self._result)
+        self._fetched.connect(self._file)
         notifier.answered.connect(self._answer)
+        if service is not None:
+            service.changed.connect(lambda *_a: self.evaluate())
         self.timer = QTimer(self, interval=CHECK_EVERY_MS, timeout=self.maybe)
         self.timer.start()
         QTimer.singleShot(60_000, self.maybe)
 
     def maybe(self):
-        check, _betas = update_settings(self.actions.work.policy)
-        last = QSettings().value("updates/last", 0, type=float)
-        if check and time.time() - last >= updates.DAY_S:
+        if self.core.due(time.time()):
             self.check()
+        else:
+            self.evaluate()
+
+    def evaluate(self):
+        """What the last sync brought, without asking the server again."""
+        self._got.emit(self.core.status())
 
     def check(self):
-        _check, betas = update_settings(self.actions.work.policy)
+        """Asks the server now."""
+        def work():
+            try:
+                self._got.emit(self.core.check())
+            except Exception as e:
+                self._got.emit(updates.Status(updates.ERROR, error=str(e) or type(e).__name__))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _result(self, status):
+        self.status = status
+        self.found.emit(status)
+        release = status.release
+        s = QSettings()
+        if status.state == updates.AVAILABLE and s.value("updates/notified", "") != release.version:
+            s.setValue("updates/notified", release.version)
+            buttons = [("download", _("Scarica"))] if status.downloadable else []
+            self.notifier.show(f"update|{release.version}", _("ActivityTrack %s disponibile") % release.version,
+                               texts.update_state(status, __version__), buttons, persistent=False)
+
+    def _answer(self, key, action):
+        if key.startswith("update|") and self.status.downloadable:
+            self.download()
+
+    def download(self):
+        release = self.status.release
+        if release is None or not self.status.downloadable:
+            return
 
         def work():
             try:
-                self._got.emit(updates.newer(updates.fetch(), __version__, betas), "")
+                self._fetched.emit(str(self.core.download(release)), "")
             except Exception as e:
-                self._got.emit(None, str(e) or type(e).__name__)
+                self._fetched.emit("", str(e) or type(e).__name__)
         threading.Thread(target=work, daemon=True).start()
 
-    def _result(self, release, error):
-        self.error = error
-        if not error:
-            QSettings().setValue("updates/last", time.time())
-        self.latest = release
-        self.found.emit(release)
-        s = QSettings()
-        if release is not None and s.value("updates/notified", "") != release.version:
-            s.setValue("updates/notified", release.version)
-            body = _("Nuova versione beta su GitLab.") if release.beta else _("Nuova versione su GitLab.")
-            self.notifier.show(f"update|{release.version}", _("ActivityTrack %s disponibile") % release.version,
-                               body, [("open", _("Scarica"))], persistent=False)
-
-    def _answer(self, key, action):
-        if key.startswith("update|") and self.latest is not None:
-            QDesktopServices.openUrl(QUrl(release_page(self.latest)))
+    def _file(self, path, error):
+        self.downloaded.emit(path, error)
+        if path:
+            # the system's own way to install it: the software centre, the installer, the archive manager
+            QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
 
 class GeneralPanel(QWidget):
@@ -135,17 +144,20 @@ class GeneralPanel(QWidget):
         lay.addWidget(shown)
         box = QGroupBox(_("Aggiornamenti"))
         bl = QVBoxLayout(box)
-        self.check = QCheckBox(_("Controlla ogni giorno se c'è una versione nuova su GitLab"))
+        self.check = QCheckBox(_("Controlla ogni giorno se il server ha una versione nuova"))
         self.betas = QCheckBox(_("Anche le versioni beta"))
-        self.check.toggled.connect(lambda on: self._save("updates/check", on))
-        self.betas.toggled.connect(lambda on: self._save("updates/betas", on))
+        self.check.toggled.connect(updater.core.set_check)
+        self.betas.toggled.connect(updater.core.set_betas)
         bl.addWidget(self.check)
         bl.addWidget(self.betas)
         row = QHBoxLayout()
         self.now = QPushButton(_("Controlla ora"), clicked=self._check_now)
-        # rich text, always: what comes from outside is escaped
-        self.result = QLabel(openExternalLinks=True, textFormat=Qt.TextFormat.RichText)
+        self.download = QPushButton(_("Scarica"), clicked=updater.download)
+        self.download.hide()
+        # plain text: what comes from the server is shown as it is
+        self.result = QLabel(wordWrap=True, textFormat=Qt.TextFormat.PlainText)
         row.addWidget(self.now)
+        row.addWidget(self.download)
         row.addWidget(self.result, 1)
         bl.addLayout(row)
         lay.addWidget(box)
@@ -154,6 +166,7 @@ class GeneralPanel(QWidget):
         version.setProperty("role", "small")
         lay.addWidget(version)
         updater.found.connect(self._found)
+        updater.downloaded.connect(self._downloaded)
         self.refresh()
 
     def add_group(self, box):
@@ -169,7 +182,7 @@ class GeneralPanel(QWidget):
         self.autostart.blockSignals(False)
         self.date_format.setCurrentIndex(max(0, self.date_format.findData(formats.date_format())))
         self.time_format.setCurrentIndex(max(0, self.time_format.findData(formats.time_format())))
-        check, betas = update_settings(p)
+        check, betas = self.updater.core.settings()
         for box, value, key in ((self.check, check, "updateCheck"), (self.betas, betas, "updateBetas")):
             box.blockSignals(True)
             box.setChecked(value)
@@ -181,25 +194,23 @@ class GeneralPanel(QWidget):
         formats.save(self.actions.session.store, self.date_format.currentData(), self.time_format.currentData())
         self.actions.changed_elsewhere()
 
-    def _save(self, key, on):
-        QSettings().setValue(key, on)
-
     def _autostart(self, on):
         try:
             autostart.set_enabled(on)
         except OSError as e:
-            self.result.setText(html.escape(str(e)))
+            self.result.setText(str(e))
         self.refresh()
 
     def _check_now(self):
         self.result.setText(_("Controllo…"))
         self.updater.check()
 
-    def _found(self, release):
-        if self.updater.error:
-            self.result.setText(html.escape(_("GitLab non raggiungibile: %s") % self.updater.error))
-        elif release is None:
-            self.result.setText(_("Hai l'ultima versione."))
-        else:
-            self.result.setText(f'<a href="{html.escape(release_page(release))}">'
-                                + html.escape(_("Scarica la %s") % release.version) + "</a>")
+    def _found(self, status):
+        self.result.setText(texts.update_state(status, __version__))
+        self.download.setVisible(status.downloadable)
+        self.download.setEnabled(True)
+
+    def _downloaded(self, path, error):
+        self.download.setEnabled(True)
+        self.result.setText(_("Scaricato e controllato: %s") % path if path
+                            else _("Scaricamento non riuscito: %s") % error)

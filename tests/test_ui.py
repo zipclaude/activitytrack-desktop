@@ -456,49 +456,116 @@ class StopTest(unittest.TestCase):
             session.store.close()
 
 
+def _signed(version="0.9.9", component="desktop-tar"):
+    """(manifest text, fingerprint of its signer): what the server relays in sync/head."""
+    import datetime
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+    from activitytrack import manifest
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "server")])
+    now = datetime.datetime.now(datetime.timezone.utc)
+    cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
+            .serial_number(1).not_valid_before(now).not_valid_after(now + datetime.timedelta(days=1))
+            .sign(key, hashes.SHA256()))
+    pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                            serialization.NoEncryption())
+    chain = cert.public_bytes(serialization.Encoding.PEM)
+    body = {"issued": "2026-11-07T10:00:00Z", "releases": [{
+        "version": version, "channel": "prod",
+        "packages": [{"component": component, "url": "/api/v1/update/files/" + "ab" * 32, "sha256": "ab" * 32}]}]}
+    fingerprint = manifest.fingerprint(cert.public_bytes(serialization.Encoding.DER))
+    return manifest.sign(body, pem, chain), fingerprint
+
+
 class GeneralUiTest(unittest.TestCase):
-    def test_only_gitlabs_pages_are_opened(self):
-        from activitytrack import updates
-        from activitytrack_desktop.general import release_page
-        good = updates.Release(
-            "0.9.5", "https://gitlab.com/infraconsulting/activitytrack-desktop/-/releases/v0.9.5", False)
-        self.assertEqual(release_page(good), good.url)
-        for url in ("https://evil.example.com/x", "https://gitlab.com.evil.example.com/x", "javascript:alert(1)",
-                    "http://gitlab.com/x", ""):
-            self.assertEqual(release_page(updates.Release("0.9.5", url, False)),
-                             f"https://gitlab.com/{updates.REPOSITORY}/-/releases")
-
-    def test_the_link_is_escaped(self):
-        from activitytrack import updates
-        from activitytrack_desktop.general import GeneralPanel
+    def setUp(self):
+        from activitytrack_desktop.general import GeneralPanel, Updates
         from activitytrack_desktop.home import Actions
-        from PyQt6.QtCore import QObject, pyqtSignal
+        from activitytrack_desktop.notify import Notifier
+        import activitytrack
+        activitytrack.set_client("ActivityTrackDesktop", "0.9.8")
+        self.addCleanup(activitytrack.set_client, "ActivityTrack", activitytrack.__version__)
+        self.dir = tempfile.TemporaryDirectory()
+        self.session = Session(self.dir.name, use_keyring=False)
+        self.notifier = Notifier(use_dbus=False)
+        self.updater = Updates(Actions(self.session), self.notifier)
+        self.updater.timer.stop()
+        self.panel = GeneralPanel(self.updater.actions, self.updater)
+        QSettings().remove("updates")
+        for patch in (mock.patch("activitytrack.manifest.from_package_manager", return_value=False),
+                      mock.patch("sys.platform", "linux")):
+            patch.start()
+            self.addCleanup(patch.stop)
 
-        class Updater(QObject):
-            found = pyqtSignal(object)
-            error = ""
-        with tempfile.TemporaryDirectory() as d:
-            session = Session(d, use_keyring=False)
-            p = GeneralPanel(Actions(session), Updater())
-            p._found(updates.Release('1.0"><img src=x>', 'https://gitlab.com/a"onclick="x', False))
-            self.assertNotIn("<img", p.result.text())
-            self.assertIn('href="https://gitlab.com/a&quot;onclick=&quot;x"', p.result.text())
-            session.store.close()
+    def tearDown(self):
+        QSettings().remove("updates")
+        self.session.store.close()
+        self.dir.cleanup()
 
-    def test_update_settings_and_the_policy(self):
-        from activitytrack_desktop import __version__
-        from activitytrack_desktop.general import update_settings
+    def pair(self, key):
+        from activitytrack.pairing import Account
+        self.session.store.set_state("account", Account("https://at.example.com", None, "d", "anna", "A", "user", "X",
+                                                        key).to_json())
+
+    def test_what_comes_from_the_server_is_shown_as_text(self):
+        from activitytrack import updates
+        from activitytrack.manifest import Release
+        self.assertEqual(self.panel.result.textFormat(), Qt.TextFormat.PlainText)
+        self.panel._found(updates.Status(updates.AVAILABLE, Release('1.0"><img src=x>', "prod", "", "", ()), True))
+        self.assertIn("<img", self.panel.result.text())
+        self.assertFalse(self.panel.download.isHidden())
+
+    def test_a_newer_version_of_the_server_is_notified_once(self):
+        text, fingerprint = _signed()
+        self.pair(fingerprint)
+        self.session.store.set_state("update.manifest", text)
+        shown = []
+        self.notifier.show = lambda *a, **kw: shown.append(a)
+        self.updater.evaluate()
+        self.updater.evaluate()
+        self.assertEqual(len(shown), 1)
+        key, title, body, buttons = shown[0][:4]
+        self.assertIn("0.9.9", title)
+        self.assertEqual([b[0] for b in buttons], ["download"])
+        self.assertFalse(self.panel.download.isHidden())
+
+    def test_a_package_manager_installation_is_not_offered_the_download(self):
+        text, fingerprint = _signed(component="desktop-deb")
+        self.pair(fingerprint)
+        self.session.store.set_state("update.manifest", text)
+        shown = []
+        self.notifier.show = lambda *a, **kw: shown.append(a)
+        with mock.patch("activitytrack.manifest.from_package_manager", return_value=True):
+            self.updater.evaluate()
+            self.assertEqual(len(shown), 1)
+            self.assertEqual(list(shown[0][3]), [])
+            self.assertTrue(self.panel.download.isHidden())
+            self.assertFalse(self.updater.status.downloadable)
+
+    def test_a_manifest_not_of_the_pinned_key_says_nothing_but_the_reason(self):
+        text, _fingerprint = _signed()
+        self.pair("cd" * 32)
+        self.session.store.set_state("update.manifest", text)
+        shown = []
+        self.notifier.show = lambda *a, **kw: shown.append(a)
+        self.updater.evaluate()
+        self.assertEqual(shown, [])
+        self.assertIn("firmato", self.panel.result.text())
+
+    def test_the_settings_and_the_policy(self):
         from activitytrack.policy import Policy
-        QSettings().remove("updates")
-        free = Policy()
-        # a pre-release follows the betas by default
-        self.assertEqual(update_settings(free), (True, "-" in __version__))
-        QSettings().setValue("updates/check", False)
-        self.assertEqual(update_settings(free)[0], False)
-        fixed = Policy({"format": "activitytrack-policy", "schema": 1,
-                        "settings": {"updateCheck": {"value": True, "locked": True}}})
-        self.assertEqual(update_settings(fixed)[0], True)
-        QSettings().remove("updates")
+        core = self.updater.core
+        self.assertEqual(core.settings()[0], True)
+        self.panel.check.setChecked(False)
+        self.assertEqual(core.settings()[0], False)
+        self.updater.actions.work.policy = Policy({"format": "activitytrack-policy", "schema": 1,
+                                                   "settings": {"updateCheck": {"value": True, "locked": True}}})
+        self.assertEqual(core.settings()[0], True)
+        self.panel.refresh()
+        self.assertFalse(self.panel.check.isEnabled())
 
 
 class WatchTest(unittest.TestCase):

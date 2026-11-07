@@ -269,10 +269,18 @@ sull'altro dispositivo.
   (12/31/2026) o ISO (2026-12-31), e degli orari, 24 ore (18:30) o 12 ore
   (6:30 PM). Valgono anche per la riga di comando e il terminale, come le
   preferenze di ActivityTrack Web;
-- **aggiornamenti**: una volta al giorno ActivityTrack controlla su GitLab se
-  c'è una versione nuova, e la notifica con **"Scarica"**. **"Anche le
-  versioni beta"** include le versioni di prova. La policy può fissare
-  entrambe le scelte.
+- **aggiornamenti**: le versioni nuove le annuncia il **server a cui il PC è
+  associato**, con ogni sincronizzazione; **"Controlla ora"** lo chiede
+  subito. L'annuncio è firmato e si accetta solo se la firma è quella del
+  server, la cui chiave arriva nel collegamento di associazione: con un
+  collegamento più vecchio (senza chiave) o con una firma diversa, il
+  programma lo dice e non offre nulla. Quando c'è una versione nuova
+  arriva una notifica con **"Scarica"**: il pacchetto si scarica dal server,
+  se ne controlla l'impronta (SHA-256) e poi si apre con il programma di
+  sistema che lo installa. Se ActivityTrack è stato installato dal gestore
+  di pacchetti (`apt`), la versione nuova si segnala ma **non si scarica**:
+  l'aggiorna il gestore. **"Anche le versioni beta"** include le versioni
+  di prova. La policy può fissare entrambe le scelte.
 
 ## 10. Scorciatoie globali
 

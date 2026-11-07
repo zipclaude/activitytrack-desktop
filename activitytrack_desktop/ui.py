@@ -286,7 +286,7 @@ class MainWindow(QMainWindow):
         self.general = None
         if actions is not None and notifier is not None:
             from .general import GeneralPanel, Updates
-            self.updater = Updates(actions, notifier, self)
+            self.updater = Updates(actions, notifier, service, self)
             self.general = GeneralPanel(actions, self.updater)
             actions.redraw.connect(self.general.refresh)
         central = QWidget()
