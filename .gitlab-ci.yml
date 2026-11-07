@@ -46,6 +46,9 @@ linux:
 windows:
   stage: test
   tags: [saas-windows-medium-amd64]
+  # Windows only at the release (a version tag): the shared Windows runners are paid
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v[0-9]/
   variables:
     QT_QPA_PLATFORM: offscreen
   script:
@@ -147,6 +150,9 @@ windows-installer:
   extends: .packaging
   stage: package
   tags: [saas-windows-medium-amd64]
+  # Windows only at the release (a version tag): the shared Windows runners are paid
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v[0-9]/
   timeout: 40m
   script:
     - choco install python313 --no-progress -y
