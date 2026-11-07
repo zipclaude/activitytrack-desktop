@@ -1,6 +1,6 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
 ; The Windows installer (docs/DESIGN.md §8): per user, no administrator
-; rights, not signed (D10). Built by .github/workflows/release.yml with
+; rights, not signed (D10). Built by .gitlab-ci.yml (job windows-installer) with
 ; AT_VERSION (0.9.4-beta1) and AT_NUMVERSION (0.9.4) in the environment,
 ; from PyInstaller's dist\ActivityTrack folder.
 
@@ -14,8 +14,8 @@ AppName=ActivityTrack
 AppVersion={#AppVersion}
 AppVerName=ActivityTrack {#AppVersion}
 AppPublisher=ActivityTrack
-AppPublisherURL=https://github.com/zipclaude/activitytrack-desktop
-AppSupportURL=https://github.com/zipclaude/activitytrack-desktop/issues
+AppPublisherURL=https://gitlab.com/infraconsulting/activitytrack-desktop
+AppSupportURL=https://gitlab.com/infraconsulting/activitytrack-desktop/-/issues
 VersionInfoVersion={#NumVersion}
 DefaultDirName={localappdata}\Programs\ActivityTrack
 DefaultGroupName=ActivityTrack

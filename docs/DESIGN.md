@@ -216,7 +216,7 @@ top and a scrolling column, at most 920 px wide.
   time, duration), priority.
 - **Impostazioni**: Sincronizzazione (server and pairing, "Non
   sincronizzati"), Promemoria (each on/off, intervals within the policy),
-  Generale (autostart, date and time formats, updates: GitHub check as the
+  Generale (autostart, date and time formats, updates: GitLab check as the
   app, §12.4), as chips over their pages.
 
 ### 6.4 Look

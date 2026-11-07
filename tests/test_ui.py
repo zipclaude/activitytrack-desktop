@@ -457,15 +457,15 @@ class StopTest(unittest.TestCase):
 
 
 class GeneralUiTest(unittest.TestCase):
-    def test_only_githubs_pages_are_opened(self):
+    def test_only_gitlabs_pages_are_opened(self):
         from activitytrack import updates
         from activitytrack_desktop.general import release_page
-        good = updates.Release("0.9.5", "https://github.com/zipclaude/activitytrack-desktop/releases/tag/v0.9.5", False)
+        good = updates.Release("0.9.5", "https://gitlab.com/infraconsulting/activitytrack-desktop/-/releases/v0.9.5", False)
         self.assertEqual(release_page(good), good.url)
-        for url in ("https://evil.example.com/x", "https://github.com.evil.example.com/x", "javascript:alert(1)",
-                    "http://github.com/x", ""):
+        for url in ("https://evil.example.com/x", "https://gitlab.com.evil.example.com/x", "javascript:alert(1)",
+                    "http://gitlab.com/x", ""):
             self.assertEqual(release_page(updates.Release("0.9.5", url, False)),
-                             f"https://github.com/{updates.REPOSITORY}/releases")
+                             f"https://gitlab.com/{updates.REPOSITORY}/-/releases")
 
     def test_the_link_is_escaped(self):
         from activitytrack import updates
@@ -479,9 +479,9 @@ class GeneralUiTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             session = Session(d, use_keyring=False)
             p = GeneralPanel(Actions(session), Updater())
-            p._found(updates.Release('1.0"><img src=x>', 'https://github.com/a"onclick="x', False))
+            p._found(updates.Release('1.0"><img src=x>', 'https://gitlab.com/a"onclick="x', False))
             self.assertNotIn("<img", p.result.text())
-            self.assertIn('href="https://github.com/a&quot;onclick=&quot;x"', p.result.text())
+            self.assertIn('href="https://gitlab.com/a&quot;onclick=&quot;x"', p.result.text())
             session.store.close()
 
     def test_update_settings_and_the_policy(self):

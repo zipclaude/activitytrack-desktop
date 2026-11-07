@@ -26,11 +26,11 @@ one shows at once in the others. They all depend on the library
 ## 2. Installing
 
 From the releases page
-(<https://github.com/zipclaude/activitytrack-desktop/releases>):
+(<https://gitlab.com/infraconsulting/activitytrack-desktop/-/releases>):
 
 - **Debian 13 and 14, Ubuntu 24.04 and 26.04**: the package of one's
   distribution with the library's (from its page,
-  <https://github.com/zipclaude/python3-activitytrack/releases>), installed with
+  <https://gitlab.com/infraconsulting/python3-activitytrack/-/releases>), installed with
   `sudo apt install ./python3-activitytrack_<version>-1-<distro>_all.deb ./activitytrack-desktop_<version>-1-<distro>_all.deb`.
   ActivityTrack shows in the applications menu.
 - **Other Linux distributions**: Python 3.11 or newer, PyQt6, cryptography and
@@ -274,7 +274,7 @@ the other device.
   (12/31/2026) or ISO (2026-12-31), and the time format, 24 hours (18:30) or
   12 hours (6:30 PM). The command line and the terminal follow them too, as
   the preferences of ActivityTrack Web;
-- **updates**: once a day ActivityTrack checks GitHub for a newer version and
+- **updates**: once a day ActivityTrack checks GitLab for a newer version and
   shows it with **"Scarica"** (download). **"Anche le versioni beta"** (betas
   too) includes the test versions. The policy may fix both.
 

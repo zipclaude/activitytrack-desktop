@@ -1,10 +1,10 @@
 # ActivityTrack Desktop
 
-The tray application of [ActivityTrack](https://github.com/zipclaude/activitytrack)
+The tray application of [ActivityTrack](https://gitlab.com/infraconsulting/activitytrack)
 for the PC: the running activities and the to-dos a click away, so that
 a short activity goes in from the keyboard instead of the phone.
 
-It works with [ActivityTrack Web](https://github.com/zipclaude/activitytrack-web),
+It works with [ActivityTrack Web](https://gitlab.com/infraconsulting/activitytrack-web),
 which is a prerequisite: the desktop is paired like a phone and syncs both
 ways; without a network it keeps working and syncs when the network is
 back. Reports, master data and the management systems stay on the phone
@@ -15,7 +15,7 @@ and XFCE, on Wayland and X11.
 
 ## Install
 
-From the [releases](https://github.com/zipclaude/activitytrack-desktop/releases):
+From the [releases](https://gitlab.com/infraconsulting/activitytrack-desktop/-/releases):
 
 - **Debian 13 / 14, Ubuntu 24.04 / 26.04**: `sudo apt install ./python3-activitytrack_<version>-1-<distro>_all.deb ./activitytrack-desktop_<version>-1-<distro>_all.deb`
   (the library from its own release),
@@ -40,12 +40,12 @@ The desktop needs a notification area: native on KDE Plasma; on XFCE the panel's
 ## Development
 
 The rules, the local copy and the sync are in the library
-[python3-activitytrack](https://github.com/zipclaude/python3-activitytrack), shared with the
+[python3-activitytrack](https://gitlab.com/infraconsulting/python3-activitytrack), shared with the
 command line and the text interface (one application, one data folder, one pairing).
 
 ```sh
 apt install python3-pyqt6 python3-cryptography python3-keyring flake8
-git clone https://github.com/zipclaude/python3-activitytrack ../python3-activitytrack
+git clone https://gitlab.com/infraconsulting/python3-activitytrack ../python3-activitytrack
 export PYTHONPATH=$PWD/../python3-activitytrack
 python3 -m activitytrack_desktop --dev     # --dev: http:// servers allowed (a local ActivityTrack Web)
 QT_QPA_PLATFORM=offscreen python3 -m unittest discover -s tests -t .

@@ -11,7 +11,7 @@
     <p>It is paired with the organisation's ActivityTrack Web server like a phone and syncs both ways; without a network it keeps working and syncs when the network is back.</p>
   </description>
   <launchable type="desktop-id">activitytrack-desktop.desktop</launchable>
-  <url type="homepage">https://github.com/zipclaude/activitytrack-desktop</url>
+  <url type="homepage">https://gitlab.com/infraconsulting/activitytrack-desktop</url>
   <developer id="it.infraconsulting">
     <name>ActivityTrack contributors</name>
   </developer>

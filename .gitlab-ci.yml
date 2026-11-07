@@ -1,0 +1,267 @@
+# CI of activitytrack-desktop on GitLab (free plan: the shared runners' minutes are
+# limited, so pipelines run for merge requests, the default branch and tags). A tag
+# vX.Y.Z builds the Debian/Ubuntu packages, the tarball, the Windows installer and the
+# manual, tries them and publishes the release. "Run pipeline" by hand does everything
+# but publishing. The library is python3-activitytrack at the tag in .gitlab/lib-ref.
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+    - if: $CI_PIPELINE_SOURCE == "web"
+
+stages: [test, package, release]
+
+default:
+  interruptible: true
+
+variables:
+  DEBIAN_FRONTEND: noninteractive
+  LIB_URL: https://gitlab.com/infraconsulting/python3-activitytrack
+
+linux:
+  stage: test
+  # on Linux the desktop runs on the distribution's packages only (docs/DESIGN.md §4):
+  # the oldest and the newest Qt of the targets
+  image: $IMAGE
+  parallel:
+    matrix:
+      - IMAGE: ["debian:trixie", "debian:forky", "ubuntu:24.04"]
+  variables:
+    QT_QPA_PLATFORM: offscreen
+  script:
+    - apt-get update
+    - apt-get install -y --no-install-recommends git ca-certificates python3 python3-pyqt6 python3-cryptography python3-keyring flake8 libegl1 dbus
+    # the library (python3-activitytrack at .gitlab/lib-ref)
+    - git clone --depth 1 -b "$(cat .gitlab/lib-ref)" "$LIB_URL" lib
+    - export PYTHONPATH="$PWD/lib"
+    - flake8 activitytrack_desktop tests
+    # a session bus for the notifications' test
+    - dbus-run-session -- python3 -m unittest discover -s tests -t . -v
+
+windows:
+  stage: test
+  tags: [saas-windows-medium-amd64]
+  variables:
+    QT_QPA_PLATFORM: offscreen
+  script:
+    - choco install python313 --no-progress -y
+    - $env:Path = "C:\Python313;C:\Python313\Scripts;" + $env:Path
+    # the libraries the installer bundles (requirements-windows.txt)
+    - python -m pip install -r requirements-windows.txt
+    - $lib = (Get-Content .gitlab/lib-ref).Trim()
+    - python -m pip install "git+$env:LIB_URL@$lib"
+    - python -m unittest discover -s tests -t . -v
+
+# the packages are tried on a tag, by hand, and in merge requests that touch the packaging
+.packaging:
+  rules:
+    - if: $CI_COMMIT_TAG
+    - if: $CI_PIPELINE_SOURCE == "web"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes: ["debian/**/*", "packaging/**/*", "requirements-*.txt", "docs/manual/**/*", "scripts/build-manual.sh", ".gitlab-ci.yml"]
+
+deb:
+  extends: .packaging
+  stage: package
+  image: $IMAGE
+  parallel:
+    matrix:
+      - { IMAGE: "debian:trixie", SUFFIX: deb13 }
+      - { IMAGE: "debian:forky", SUFFIX: deb14 }
+      - { IMAGE: "ubuntu:24.04", SUFFIX: ubuntu24.04 }
+      - { IMAGE: "ubuntu:26.04", SUFFIX: ubuntu26.04 }
+  variables:
+    QT_QPA_PLATFORM: offscreen
+  script:
+    - apt-get update
+    - apt-get install -y --no-install-recommends ca-certificates git build-essential debhelper dpkg-dev devscripts equivs desktop-file-utils appstream
+    # version
+    - V=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' activitytrack_desktop/__init__.py)
+    # a release is built on a released library
+    - if [ -n "$CI_COMMIT_TAG" ]; then test "v$V" = "$CI_COMMIT_TAG"; grep -q "^v" .gitlab/lib-ref; fi
+    # Debian: a beta 1.1.0-beta.1 is 1.1.0~beta.1 (sorts before 1.1.0); only the first "-"
+    - DV=$(echo "$V" | sed 's/-/~/')
+    # the package: that version and a Debian revision, 1.1.0~beta.1-1
+    - PV=$(dpkg-parsechangelog -S Version)
+    - test "$(dpkg-parsechangelog -S Source)" = activitytrack-desktop && test "${PV%-*}" = "$DV" && test "$PV" != "$DV"
+    - grep -q "<release version=\"$DV\"" packaging/it.infraconsulting.activitytrack_desktop.metainfo.xml
+    # the distribution goes in the revision: 1.1.0~beta.1-1~deb13 still satisfies (>= 1.1.0~beta.1)
+    - sed -i "1s/($PV)/($PV~$SUFFIX)/" debian/changelog
+    - head -1 debian/changelog
+    # desktop entry and AppStream
+    - desktop-file-validate packaging/activitytrack-desktop.desktop
+    - appstreamcli validate --no-net --pedantic packaging/it.infraconsulting.activitytrack_desktop.metainfo.xml || appstreamcli validate --no-net packaging/it.infraconsulting.activitytrack_desktop.metainfo.xml
+    # the library's package (python3-activitytrack at .gitlab/lib-ref)
+    - git clone --depth 1 -b "$(cat .gitlab/lib-ref)" "$LIB_URL" /tmp/lib
+    - cd /tmp/lib
+    # versioned as in its release (1.1.0~beta.1-1~deb13): the Depends are tried on that
+    - sed -i "1s/(\([^)]*\))/(\1~$SUFFIX)/" debian/changelog
+    - mk-build-deps -i -r -t "apt-get -y --no-install-recommends" debian/control
+    - dpkg-buildpackage -b -us -uc
+    - apt-get install -y /tmp/python3-activitytrack_*.deb
+    - cd "$CI_PROJECT_DIR"
+    # package
+    - dpkg-buildpackage -b -us -uc
+    - mkdir dist && mv ../activitytrack-desktop_*.deb dist/
+    - dpkg-deb --info dist/*.deb
+    - dpkg-deb --contents dist/*.deb
+    - apt-get install -y ./dist/*.deb
+    # try it
+    - activitytrack-desktop --version
+    # the tests against the installed code, not the checkout's
+    - mkdir /tmp/t && cp -r tests /tmp/t/ && cd /tmp/t
+    - PYTHONPATH=/usr/share/activitytrack-desktop python3 -c "import activitytrack_desktop, sys; print(activitytrack_desktop.__file__)"
+    - PYTHONPATH=/usr/share/activitytrack-desktop python3 -m unittest discover -s tests -t . -v
+    - cd "$CI_PROJECT_DIR"
+    # remove
+    - apt-get purge -y activitytrack-desktop
+    - test ! -e /usr/share/activitytrack-desktop && test ! -e /usr/bin/activitytrack-desktop
+  artifacts:
+    paths: ["dist/*.deb"]
+    expire_in: 30 days
+
+tarball:
+  extends: .packaging
+  stage: package
+  image: debian:trixie
+  script:
+    - apt-get update && apt-get install -y --no-install-recommends git ca-certificates
+    - V=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' activitytrack_desktop/__init__.py)
+    - mkdir dist
+    - git archive --prefix="activitytrack-desktop-$V/" -o "dist/activitytrack-desktop-$V.tar.gz" HEAD
+    - tar -tzf dist/*.tar.gz | grep -c .
+    - mkdir /tmp/at && tar -xzf dist/*.tar.gz -C /tmp/at --strip-components=1
+    - test -f /tmp/at/activitytrack_desktop/__main__.py
+    - test -f /tmp/at/packaging/activitytrack-desktop.desktop
+  artifacts:
+    paths: ["dist/*.tar.gz"]
+    expire_in: 30 days
+
+# docs/DESIGN.md §8: PyInstaller (one folder) and Inno Setup, per user, not signed (D10)
+windows-installer:
+  extends: .packaging
+  stage: package
+  tags: [saas-windows-medium-amd64]
+  timeout: 40m
+  script:
+    - choco install python313 --no-progress -y
+    - $env:Path = "C:\Python313;C:\Python313\Scripts;" + $env:Path
+    - python -m pip install -r requirements-windows.txt -r requirements-build-windows.txt
+    - $lib = (Get-Content .gitlab/lib-ref).Trim()
+    - python -m pip install "git+$env:LIB_URL@$lib"
+    # version
+    - $env:AT_VERSION = (Select-String -Path activitytrack_desktop/__init__.py -Pattern '^__version__ = "(.*)"').Matches[0].Groups[1].Value
+    - if ($env:CI_COMMIT_TAG -and "v$env:AT_VERSION" -ne $env:CI_COMMIT_TAG) { throw "tag $env:CI_COMMIT_TAG, version $env:AT_VERSION" }
+    - $env:AT_NUMVERSION = ($env:AT_VERSION -split '-')[0]
+    - $env:QT_QPA_PLATFORM = "offscreen"
+    - python -m unittest discover -s tests -t .
+    # bundle
+    - |
+      pyinstaller --noconfirm --clean --windowed --name ActivityTrack `
+        --icon packaging/windows/activitytrack-desktop.ico `
+        --paths . --collect-submodules keyring.backends --collect-data tzdata `
+        --collect-submodules activitytrack --collect-data activitytrack --collect-data activitytrack_desktop `
+        packaging/windows/launcher.py
+    # try the bundle
+    - |
+      $p = Start-Process dist/ActivityTrack/ActivityTrack.exe -ArgumentList "--selftest", "$pwd/selftest.txt" -Wait -PassThru
+      Get-Content selftest.txt
+      if ($p.ExitCode -ne 0) { throw "selftest: $($p.ExitCode)" }
+      if (-not (Select-String -Path selftest.txt -Pattern "^ok $env:AT_VERSION ")) { throw "selftest output" }
+    # installer
+    - |
+      $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+      if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+      & $iscc packaging/windows/activitytrack-desktop.iss
+      if ($LASTEXITCODE -ne 0) { throw "iscc $LASTEXITCODE" }
+      Get-ChildItem dist/*.exe
+    # install, try, uninstall
+    - |
+      $setup = (Get-ChildItem dist/ActivityTrackDesktop-*-setup.exe).FullName
+      Start-Process $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/TASKS=autostart" -Wait
+      $app = "$env:LOCALAPPDATA\Programs\ActivityTrack"
+      if (-not (Test-Path "$app\ActivityTrack.exe")) { throw "not installed in $app" }
+      $run = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name ActivityTrack
+      if ($run.ActivityTrack -notlike "*--hidden") { throw "autostart: $($run.ActivityTrack)" }
+      $p = Start-Process "$app\ActivityTrack.exe" -ArgumentList "--selftest", "$pwd/installed.txt" -Wait -PassThru
+      Get-Content installed.txt
+      if ($p.ExitCode -ne 0) { throw "installed selftest: $($p.ExitCode)" }
+      Start-Process "$app\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES" -Wait
+      Start-Sleep -Seconds 3
+      if (Test-Path "$app\ActivityTrack.exe") { throw "still installed" }
+      if (Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name ActivityTrack -ErrorAction SilentlyContinue) { throw "autostart left" }
+  artifacts:
+    paths: ["dist/ActivityTrackDesktop-*-setup.exe"]
+    expire_in: 30 days
+
+# the user manual, it and en (docs/manual)
+manual:
+  extends: .packaging
+  stage: package
+  image: debian:trixie
+  script:
+    # a release's manual carries its version
+    - V=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' activitytrack_desktop/__init__.py)
+    - |
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        for f in docs/manual/it/desktop.md docs/manual/en/desktop.md; do
+          head -1 "$f" | grep -q "^Versione $V \|^Version $V " || { echo "$f does not say version $V"; exit 1; }
+        done
+      fi
+    - apt-get update && apt-get install -y --no-install-recommends pandoc chromium fonts-dejavu-core fonts-liberation
+    - scripts/build-manual.sh
+    - mkdir dist && cp build/manual/*.pdf dist/
+  artifacts:
+    paths: ["dist/*.pdf"]
+    expire_in: 30 days
+
+# the files go to the project's Generic Packages and the release links them
+# (permalinks .../-/releases/<tag>/downloads/<file>); a version with a suffix is a beta
+release:
+  stage: release
+  image: alpine:3.22
+  rules:
+    - if: $CI_COMMIT_TAG
+  interruptible: false
+  script:
+    - apk add --no-cache curl jq coreutils
+    - V="${CI_COMMIT_TAG#v}"
+    - PV=$(sed -n '1s/^[^(]*(\(.*\)).*/\1/p' debian/changelog)
+    - R="${PV##*-}"
+    - LIB=$(cat .gitlab/lib-ref)
+    # "~" of the package versions is not allowed in a package file's name: "-" instead
+    - mkdir artifacts && cp dist/*.deb dist/*.tar.gz dist/*.exe dist/*.pdf artifacts/
+    - cd artifacts
+    - for f in activitytrack-desktop_*~*_all.deb; do mv "$f" "$(echo "$f" | tr '~' '-')"; done
+    - sha256sum * > SHA256SUMS && cat SHA256SUMS
+    - cd ..
+    - |
+      {
+        case "$V" in
+          *-*) echo "ActivityTrack Desktop $V: a test release, not for daily use yet."
+               echo
+               echo "A server older than ActivityTrack Web 0.9.4 lists the PC among the phones: pair the phone first, or check on the web that the phone keeps \"Invia ai gestionali\"." ;;
+          *) echo "ActivityTrack Desktop $V, for ActivityTrack Web $V." ;;
+        esac
+        echo
+        echo "It needs an ActivityTrack Web server to pair with (Dispositivi → Associa un dispositivo, then paste the link)."
+        echo
+        echo "- Debian 13 / 14, Ubuntu 24.04 / 26.04: \`apt install ./python3-activitytrack_*-<distro>_all.deb ./activitytrack-desktop_${V}-${R}-<distro>_all.deb\` (deb13, deb14, ubuntu24.04, ubuntu26.04); the library [python3-activitytrack]($LIB_URL/-/releases/$LIB) is in its own release"
+        echo "- Other distributions: \`activitytrack-desktop-$V.tar.gz\`, see [README]($CI_PROJECT_URL/-/blob/v$V/README.md)"
+        echo "- Windows 10 / 11: \`ActivityTrackDesktop-$V-setup.exe\`, installed for the current user. It is not signed: Windows SmartScreen warns at the first run (More info → Run anyway); check the file against SHA256SUMS."
+        echo
+        echo "Manual: \`ActivityTrack-Desktop-Manuale-$V.pdf\` (it), \`ActivityTrack-Desktop-Manual-$V.pdf\` (en)."
+      } > notes.md
+    - |
+      links='[]'
+      for f in artifacts/*; do
+        n=$(basename "$f")
+        u="$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/activitytrack-desktop/$V/$n"
+        curl --fail -sS --header "JOB-TOKEN: $CI_JOB_TOKEN" --upload-file "$f" "$u"
+        links=$(echo "$links" | jq -c --arg n "$n" --arg u "$u" '. + [{name:$n, url:$u, direct_asset_path:("/"+$n), link_type:"package"}]')
+      done
+      jq -n --arg tag "$CI_COMMIT_TAG" --arg name "ActivityTrack Desktop $V" --rawfile desc notes.md --argjson links "$links" \
+        '{tag_name:$tag, name:$name, description:$desc, assets:{links:$links}}' |
+        curl --fail-with-body -sS -X POST --header "JOB-TOKEN: $CI_JOB_TOKEN" --header "Content-Type: application/json" --data @- "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases"
