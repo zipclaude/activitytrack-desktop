@@ -2,4 +2,4 @@
 """ActivityTrack Desktop: the tray application of ActivityTrack (docs/DESIGN.md)."""
 
 # aligned with the app and the web (D6)
-__version__ = "0.9.6"
+__version__ = "0.9.8"

@@ -1,4 +1,4 @@
-Version 0.9.6 (November 2026). ActivityTrack Desktop is the PC app of
+Version 0.9.8 (November 2026). ActivityTrack Desktop is the PC app of
 ActivityTrack. It lives in the notification area, next to the clock, and keeps
 the running activities and the *To-dos* a click away. So an activity, even a
 short one, goes in from the keyboard instead of the phone.
