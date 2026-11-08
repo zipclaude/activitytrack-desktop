@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-The manual's screenshots (docs/manual/img), from sample data in a
+The manual's screenshots (../activitytrack-doc/manual/desktop/img), from sample data in a
 temporary folder: no server, no personal data. --dark takes the dark
 theme's (home-dark.png…); SCREENSHOTS_OUT another folder.
 
@@ -20,7 +20,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PyQt6.QtCore import QLibraryInfo, QLocale, QSettings, Qt, QTimer, QTranslator  # noqa: E402
 from PyQt6.QtWidgets import QApplication  # noqa: E402
 
-OUT = Path(os.environ.get("SCREENSHOTS_OUT") or ROOT / "docs" / "manual" / "img")
+# the manuals live in the documentation repository, cloned next to this one
+OUT = Path(os.environ.get("SCREENSHOTS_OUT") or ROOT.parent / "activitytrack-doc" / "manual" / "desktop" / "img")
 MIN = 60_000
 
 

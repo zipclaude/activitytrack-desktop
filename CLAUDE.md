@@ -43,5 +43,5 @@ The job `windows` of `.gitlab-ci.yml` runs the same tests on Windows (paid share
 ## 3. A release touches
 
 - `.gitlab/lib-ref` (tag of the library), `activitytrack_desktop/__init__.py` (version), `debian/changelog`, `debian/control` (dependency on the library), the man page `.TH`.
-- The manuals (`docs/manual`) move to `activitytrack-doc`; the AppStream `<release>` in `packaging/it.infraconsulting.activitytrack_desktop.metainfo.xml` stays here.
+- The manual lives in `activitytrack-doc` (`manual/desktop`, the screenshots come from `scripts/screenshots.py`); the AppStream `<release>` in `packaging/it.infraconsulting.activitytrack_desktop.metainfo.xml` stays here.
 - The Windows executable is built with PyInstaller (`requirements-windows.txt`, `requirements-build-windows.txt`).

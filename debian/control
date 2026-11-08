@@ -16,7 +16,7 @@ Depends: ${misc:Depends},
  python3-pyqt6,
  python3-xlib,
  qt6-qpa-plugins
-Recommends: qt6-translations-l10n, qt6-wayland
+Recommends: qt6-translations-l10n, qt6-wayland, activitytrack-doc
 Description: tray application of ActivityTrack for the PC
  ActivityTrack Desktop keeps the running activities and the to-dos of the
  ActivityTrack app a click away from the system tray, so that an activity

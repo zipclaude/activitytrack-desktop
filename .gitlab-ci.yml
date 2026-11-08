@@ -2,7 +2,7 @@
 # request into next starts one, see workflow below): start one by hand ("Run pipeline" on a branch or tag) or with the pipelines API.
 # The Linux jobs run on the owner's local runner (tag local, set in default below), free of
 # charge. The Windows jobs (shared, paid runners) run only on a version tag, at the release.
-# Started on a branch a pipeline tests and builds the Debian/Ubuntu packages, the tarball and the manual, and
+# Started on a branch a pipeline tests and builds the Debian/Ubuntu packages, the tarball, and
 # publishes nothing; started on a tag vX.Y.Z it also builds the Windows installer, tries everything
 # and publishes the release. The library is python3-activitytrack at the tag in .gitlab/lib-ref.
 
@@ -204,27 +204,6 @@ windows-installer:
     paths: ["dist/ActivityTrackDesktop-*-setup.exe"]
     expire_in: 30 days
 
-# the user manual, it and en (docs/manual)
-manual:
-  extends: .packaging
-  stage: package
-  image: debian:trixie
-  script:
-    # a release's manual carries its version
-    - V=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' activitytrack_desktop/__init__.py)
-    - |
-      if [ -n "$CI_COMMIT_TAG" ]; then
-        for f in docs/manual/it/desktop.md docs/manual/en/desktop.md; do
-          head -1 "$f" | grep -q "^Versione $V \|^Version $V " || { echo "$f does not say version $V"; exit 1; }
-        done
-      fi
-    - apt-get update && apt-get install -y --no-install-recommends pandoc chromium fonts-dejavu-core fonts-liberation
-    - scripts/build-manual.sh
-    - mkdir dist && cp build/manual/*.pdf dist/
-  artifacts:
-    paths: ["dist/*.pdf"]
-    expire_in: 30 days
-
 # the files go to the project's Generic Packages and the release links them
 # (permalinks .../-/releases/<tag>/downloads/<file>); a version with a suffix is a beta
 release:
@@ -240,7 +219,7 @@ release:
     - R="${PV##*-}"
     - LIB=$(cat .gitlab/lib-ref)
     # "~" of the package versions is not allowed in a package file's name: "-" instead
-    - mkdir artifacts && cp dist/*.deb dist/*.tar.gz dist/*.exe dist/*.pdf artifacts/
+    - mkdir artifacts && cp dist/*.deb dist/*.tar.gz dist/*.exe artifacts/
     - cd artifacts
     - for f in activitytrack-desktop_*~*_all.deb; do mv "$f" "$(echo "$f" | tr '~' '-')"; done
     - sha256sum * > SHA256SUMS && cat SHA256SUMS
@@ -260,7 +239,7 @@ release:
         echo "- Other distributions: \`activitytrack-desktop-$V.tar.gz\`, see [README]($CI_PROJECT_URL/-/blob/v$V/README.md)"
         echo "- Windows 10 / 11: \`ActivityTrackDesktop-$V-setup.exe\`, installed for the current user. It is not signed: Windows SmartScreen warns at the first run (More info → Run anyway); check the file against SHA256SUMS."
         echo
-        echo "Manual: \`ActivityTrack-Desktop-Manuale-$V.pdf\` (it), \`ActivityTrack-Desktop-Manual-$V.pdf\` (en)."
+        echo "Manual (it, en): in the documentation release, https://gitlab.com/activitytrack/activitytrack-doc/-/releases/v$V, and in the package \`activitytrack-doc\`."
       } > notes.md
     - |
       links='[]'
