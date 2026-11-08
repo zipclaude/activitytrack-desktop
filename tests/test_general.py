@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-import json
 import os
 import sys
 import tempfile
@@ -9,14 +8,6 @@ from unittest import mock
 
 from activitytrack import updates
 from activitytrack_desktop import autostart
-
-# what GitLab answers: no pre-release flag (a tag with a suffix is a beta), "upcoming_release" for a release dated ahead
-RELEASES = json.dumps([
-    {"tag_name": "v0.9.4-beta1", "_links": {"self": "https://x/b1"}},
-    {"tag_name": "v0.9.3", "_links": {"self": "https://x/093"}},
-    {"tag_name": "v0.9.5", "upcoming_release": True},
-    {"tag_name": "v0.9.3-alfa1"},
-])
 
 
 class UpdatesTest(unittest.TestCase):
@@ -29,13 +20,6 @@ class UpdatesTest(unittest.TestCase):
         self.assertEqual(updates.compare("1.0", "1.0.0"), 0)
         self.assertEqual(updates.compare("v1.2", "1.2.0"), 0)
         self.assertEqual(updates.compare("x", "0.0.1"), -1)
-
-    def test_newer(self):
-        self.assertEqual(updates.newer(RELEASES, "0.9.3-alfa1", betas=True).version, "0.9.4-beta1")
-        # without the betas: the stable 0.9.3 is newer than the alfa
-        self.assertEqual(updates.newer(RELEASES, "0.9.3-alfa1", betas=False).url, "https://x/093")
-        self.assertIsNone(updates.newer(RELEASES, "0.9.4-beta1", betas=True))
-        self.assertIsNone(updates.newer("{", "0.9.3", betas=True))
 
 
 @unittest.skipIf(sys.platform == "win32", "the XDG entry")

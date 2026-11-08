@@ -274,9 +274,17 @@ the other device.
   (12/31/2026) or ISO (2026-12-31), and the time format, 24 hours (18:30) or
   12 hours (6:30 PM). The command line and the terminal follow them too, as
   the preferences of ActivityTrack Web;
-- **updates**: once a day ActivityTrack checks GitLab for a newer version and
-  shows it with **"Scarica"** (download). **"Anche le versioni beta"** (betas
-  too) includes the test versions. The policy may fix both.
+- **updates**: new versions are announced by the **server the PC is paired
+  with**, at every sync; **"Controlla ora"** (check now) asks at once. The
+  announcement is signed and accepted only if the signature is the server's,
+  whose key comes in the pairing link: with an older link (no key) or another
+  signature the program says so and offers nothing. A new version shows as a
+  notification with **"Scarica"** (download): the package comes from the
+  server, its SHA-256 is checked, and then it opens with the system's
+  installer. If ActivityTrack was installed by the package manager (`apt`),
+  the new version is reported but **not downloaded**: the package manager
+  updates it. **"Anche le versioni beta"** (betas too) includes the test
+  versions. The policy may fix both.
 
 ## 10. Global shortcuts
 
