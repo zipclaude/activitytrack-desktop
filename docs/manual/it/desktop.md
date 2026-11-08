@@ -23,11 +23,11 @@ fa con una compare subito nelle altre. Tutte dipendono dalla libreria
 ## 2. Installazione
 
 Dalla pagina delle release
-(<https://gitlab.com/infraconsulting/activitytrack-desktop/-/releases>):
+(<https://gitlab.com/activitytrack/activitytrack-desktop/-/releases>):
 
 - **Debian 13 e 14, Ubuntu 24.04 e 26.04**: il pacchetto della propria
   distribuzione insieme a quello della libreria (dalla sua pagina,
-  <https://gitlab.com/infraconsulting/python3-activitytrack/-/releases>), installati con
+  <https://gitlab.com/activitytrack/python3-activitytrack/-/releases>), installati con
   `sudo apt install ./python3-activitytrack_<versione>-1-<distro>_all.deb ./activitytrack-desktop_<versione>-1-<distro>_all.deb`.
   ActivityTrack compare nel menu delle applicazioni.
 - **Altre distribuzioni Linux**: servono Python 3.11 o più recente, PyQt6,
