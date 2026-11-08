@@ -9,6 +9,7 @@ from unittest import mock
 from activitytrack import updates
 from activitytrack_desktop import autostart
 
+
 class UpdatesTest(unittest.TestCase):
     def test_compare(self):
         order = ["0.9.3-alfa1", "0.9.3-beta.2", "0.9.3-beta.10", "0.9.3", "0.9.4-alfa1", "0.9.4-beta1", "0.9.4",
