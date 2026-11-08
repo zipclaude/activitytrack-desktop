@@ -532,6 +532,31 @@ class GeneralUiTest(unittest.TestCase):
         self.assertEqual([b[0] for b in buttons], ["download"])
         self.assertFalse(self.panel.download.isHidden())
 
+    def test_a_download_under_way_is_not_started_twice(self):
+        text, fingerprint = _signed()
+        self.pair(fingerprint)
+        self.session.store.set_state("update.manifest", text)
+        self.updater.evaluate()
+        threads = []
+
+        class Thread:
+            def __init__(self, target=None, daemon=None):
+                threads.append(target)
+
+            def start(self):
+                pass
+        with mock.patch("activitytrack_desktop.general.threading.Thread", Thread):
+            self.panel.download.click()
+            self.assertFalse(self.panel.download.isEnabled())
+            self.updater.download()
+            self.updater.download()
+            self.assertEqual(len(threads), 1)
+            # the download ends (here: with an error): the button is back and one may start again
+            self.updater._file("", "boom")
+            self.assertTrue(self.panel.download.isEnabled())
+            self.panel.download.click()
+            self.assertEqual(len(threads), 2)
+
     def test_a_package_manager_installation_is_not_offered_the_download(self):
         text, fingerprint = _signed(component="desktop-deb13")
         self.pair(fingerprint)

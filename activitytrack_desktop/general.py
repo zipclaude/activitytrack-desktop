@@ -44,6 +44,8 @@ class Updates(QObject):
     found = Signal(object)
     # (path of the package or "", error)
     downloaded = Signal(str, str)
+    # a download starts
+    started = Signal()
     _got = Signal(object)
     _fetched = Signal(str, str)
 
@@ -52,6 +54,8 @@ class Updates(QObject):
         self.actions, self.notifier = actions, notifier
         self.core = updates.Updates(actions.session, Runner(actions.session), lambda: actions.work.policy)
         self.status = updates.Status(updates.NONE)
+        # a download is under way: the button and the notification do not start another
+        self.busy = False
         self._got.connect(self._result)
         self._fetched.connect(self._file)
         notifier.answered.connect(self._answer)
@@ -97,8 +101,10 @@ class Updates(QObject):
 
     def download(self):
         release = self.status.release
-        if release is None or not self.status.downloadable:
+        if release is None or not self.status.downloadable or self.busy:
             return
+        self.busy = True
+        self.started.emit()
 
         def work():
             try:
@@ -108,6 +114,7 @@ class Updates(QObject):
         threading.Thread(target=work, daemon=True).start()
 
     def _file(self, path, error):
+        self.busy = False
         self.downloaded.emit(path, error)
         if path:
             # the system's own way to install it: the software centre, the installer, the archive manager
@@ -166,6 +173,7 @@ class GeneralPanel(QWidget):
         version.setProperty("role", "small")
         lay.addWidget(version)
         updater.found.connect(self._found)
+        updater.started.connect(lambda: self.download.setEnabled(False))
         updater.downloaded.connect(self._downloaded)
         self.refresh()
 
