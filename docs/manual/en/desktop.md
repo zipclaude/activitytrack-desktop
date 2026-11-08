@@ -26,11 +26,11 @@ one shows at once in the others. They all depend on the library
 ## 2. Installing
 
 From the releases page
-(<https://gitlab.com/infraconsulting/activitytrack-desktop/-/releases>):
+(<https://gitlab.com/activitytrack/activitytrack-desktop/-/releases>):
 
 - **Debian 13 and 14, Ubuntu 24.04 and 26.04**: the package of one's
   distribution with the library's (from its page,
-  <https://gitlab.com/infraconsulting/python3-activitytrack/-/releases>), installed with
+  <https://gitlab.com/activitytrack/python3-activitytrack/-/releases>), installed with
   `sudo apt install ./python3-activitytrack_<version>-1-<distro>_all.deb ./activitytrack-desktop_<version>-1-<distro>_all.deb`.
   ActivityTrack shows in the applications menu.
 - **Other Linux distributions**: Python 3.11 or newer, PyQt6, cryptography and
