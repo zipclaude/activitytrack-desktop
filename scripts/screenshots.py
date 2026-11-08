@@ -56,6 +56,10 @@ def sample(store, now):
 
 def main():
     dark = "--dark" in sys.argv
+    # the manual lives in the documentation repository, cloned next to this one: without it the
+    # screenshots would land in a stray folder (unless SCREENSHOTS_OUT names another one)
+    if not os.environ.get("SCREENSHOTS_OUT") and not OUT.parent.is_dir():
+        raise SystemExit(f"clone activitytrack-doc next to this repository ({OUT.parent} is missing)")
     app = QApplication([])
     app.setApplicationName("activitytrack-desktop-screenshots")
     # Qt's own buttons in Italian, as the users see them
