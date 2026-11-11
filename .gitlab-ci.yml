@@ -27,6 +27,11 @@ variables:
 
 linux:
   stage: test
+  # a pipeline started with TESTVM=1 runs the testvm jobs only (docs: activitytrack-doc agents/testvm-ci.md)
+  rules:
+    - if: $TESTVM
+      when: never
+    - when: on_success
   # on Linux the desktop runs on the distribution's packages only (docs/DESIGN.md §4):
   # the oldest and the newest Qt of the targets
   image: $IMAGE
@@ -50,6 +55,8 @@ windows:
   tags: [saas-windows-medium-amd64]
   # Windows only at the release (a version tag): the shared Windows runners are paid
   rules:
+    - if: $TESTVM
+      when: never
     - if: $CI_COMMIT_TAG =~ /^v[0-9]/
   variables:
     QT_QPA_PLATFORM: offscreen
@@ -65,6 +72,8 @@ windows:
 # the Linux packages are built on a tag and in a pipeline started by hand or by the API
 .packaging:
   rules:
+    - if: $TESTVM
+      when: never
     - if: $CI_COMMIT_TAG =~ /^v[0-9]/
     - if: $CI_PIPELINE_SOURCE == "web" || $CI_PIPELINE_SOURCE == "api"
 
@@ -151,6 +160,8 @@ windows-installer:
   tags: [saas-windows-medium-amd64]
   # Windows only at the release (a version tag): the shared Windows runners are paid
   rules:
+    - if: $TESTVM
+      when: never
     - if: $CI_COMMIT_TAG =~ /^v[0-9]/
   timeout: 40m
   script:
@@ -210,6 +221,8 @@ release:
   stage: release
   image: alpine:3.22
   rules:
+    - if: $TESTVM
+      when: never
     - if: $CI_COMMIT_TAG =~ /^v[0-9]/
   interruptible: false
   script:
@@ -252,3 +265,22 @@ release:
       jq -n --arg tag "$CI_COMMIT_TAG" --arg name "ActivityTrack Desktop $V" --rawfile desc notes.md --argjson links "$links" \
         '{tag_name:$tag, name:$name, description:$desc, assets:{links:$links}}' |
         curl --fail-with-body -sS -X POST --header "JOB-TOKEN: $CI_JOB_TOKEN" --header "Content-Type: application/json" --data @- "$CI_API_V4_URL/projects/$CI_PROJECT_ID/releases"
+
+# ---- test VM runner (tag testvm, the owner's test VM): a pipeline started with the variable TESTVM=1 runs
+# ---- only the jobs below; every other job has "if: $TESTVM / when: never" first in its rules.
+# ---- Images are built by hand on the VM (activitytrack-doc agents/testvm-ci.md).
+# the library is taken at the branch below, not at .gitlab/lib-ref (a released tag): set TESTVM_LIB_REF to change it
+testvm:
+  stage: test
+  tags: [testvm]
+  image: activitytrack/pytest:trixie
+  rules:
+    - if: $TESTVM
+  variables:
+    QT_QPA_PLATFORM: offscreen
+    TESTVM_LIB_REF: feature/activity-1.0
+  script:
+    - git clone --depth 1 -b "$TESTVM_LIB_REF" "$LIB_URL" lib
+    - export PYTHONPATH="$PWD/lib"
+    - flake8 activitytrack_desktop tests
+    - dbus-run-session -- python3 -m unittest discover -s tests -t . -v
