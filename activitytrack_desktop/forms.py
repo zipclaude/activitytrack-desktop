@@ -16,14 +16,14 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from activitytrack import formats
+from activitytrack import formats, model
 from activitytrack.i18n import _
-from activitytrack.texts import KINDS, clock, error_text, field_label, hm, state_label
-from activitytrack.work import (
-    ACTIVE, PAUSE, STOP, SUSPEND, TO_COMPLETE, TRAVEL, WORK, StartRequest, WorkError,
+from activitytrack.texts import (
+    ABSENCE_KINDS, KINDS, PRIORITIES, clock, display_label, entry_actions, error_text, field_label, hm,
 )
+from activitytrack.work import PAUSE, STOP, SUSPEND, TRAVEL, WORK, StartRequest, WorkError
 
-from . import icons, theme, widgets as W
+from . import icons, states, theme, widgets as W
 from .timegrid_ui import attach_range, attach_single
 
 KEEP = "KEEP"
@@ -181,9 +181,11 @@ class StartOptions(QWidget):
         self.work_mode, self.travel_mode = segmented((KINDS[WORK], "play"), (KINDS[TRAVEL], "travel"))
         if travel:
             lay.addRow(_("Tipo"), _row(self.work_mode, self.travel_mode))
-        self.now_mode, self.done = segmented((_("Adesso"), None), (_("Già fatta"), None))
-        self.done.setToolTip(_("Già fatta: indica inizio e fine"))
-        lay.addRow(_("Quando"), _row(self.now_mode, self.done))
+        self.now_mode, self.begun, self.done = segmented((_("Adesso"), None), (_("Già iniziata"), None),
+                                                         (_("Passata"), None))
+        self.begun.setToolTip(_("Già iniziata: indica l'inizio"))
+        self.done.setToolTip(_("Passata: indica inizio e fine"))
+        lay.addRow(_("Quando"), _row(self.now_mode, self.begun, self.done))
         self.start = QDateTimeEdit(QDateTime.currentDateTime().addSecs(-30 * 60), calendarPopup=True)
         self.end = QDateTimeEdit(QDateTime.currentDateTime(), calendarPopup=True)
         _formatted(self.start, self.end)
@@ -193,7 +195,8 @@ class StartOptions(QWidget):
         times = QHBoxLayout()
         times.addWidget(self.start)
         times.addWidget(grid_start)
-        times.addWidget(QLabel("→"))
+        arrow = QLabel("→")
+        times.addWidget(arrow)
         times.addWidget(self.end)
         times.addWidget(grid_end)
         times.addStretch()
@@ -202,22 +205,29 @@ class StartOptions(QWidget):
         times.setContentsMargins(0, 0, 0, 0)
         lay.addRow("", self.times)
         self.times.setVisible(False)
-        self.done.toggled.connect(self.times.setVisible)
+        self.end_widgets = (self.end, grid_end)
+
+        def shown():
+            self.times.setVisible(self.begun.isChecked() or self.done.isChecked())
+            # already begun: only the start; past: start and end
+            for w in (*self.end_widgets, arrow):
+                w.setVisible(self.done.isChecked())
+        self.begun.toggled.connect(shown)
+        self.done.toggled.connect(shown)
+        shown()
         # the activities running: left running, suspended or stopped
         self.others = {}
         concurrent = work.policy.feature("concurrentEntries")
         for e in work.running():
-            if e.get("status") != ACTIVE:
+            if work.open_segment(e["uid"]) is None:
                 continue
             c = QComboBox()
             if concurrent:
                 c.addItem(_("Lasciala in corso"), KEEP)
-            if e.get("mode") != PAUSE:
-                c.addItem(_("Sospendila"), SUSPEND)
+            c.addItem(_("Sospendila"), SUSPEND)
             c.addItem(_("Fermala"), STOP)
             # starting another activity usually means switching: the one at work is suspended
-            if e.get("mode") != PAUSE:
-                c.setCurrentIndex(c.findData(SUSPEND))
+            c.setCurrentIndex(c.findData(SUSPEND))
             self.others[e["uid"]] = c
             name = QLabel(work.label(e))
             name.setWordWrap(True)
@@ -225,7 +235,10 @@ class StartOptions(QWidget):
 
     def apply(self, req):
         req.mode = TRAVEL if self.travel_mode.isChecked() else WORK
-        if self.done.isChecked():
+        if self.begun.isChecked():
+            req.start_ms = _ms(self.start)
+            req.others = {u: c.currentData() for u, c in self.others.items() if c.currentData() != KEEP}
+        elif self.done.isChecked():
             req.start_ms, req.end_ms = _ms(self.start), _ms(self.end)
             # an activity already done leaves the running ones as they are
             req.others = {}
@@ -300,7 +313,7 @@ class QuickEntry(_Dialog):
         self.options = StartOptions(work)
         self.lay.addWidget(self.options)
         if todo:
-            self.description.setPlainText(todo.get("title") or "")
+            self.description.setPlainText(todo.get("activity") or "")
             self.client.set_value(todo.get("clientUid"))
         hint = QLabel(_("Ctrl+Invio per avviare"))
         hint.setProperty("role", "small")
@@ -334,13 +347,15 @@ class QuickEntry(_Dialog):
 class EntryDialog(_Dialog):
     """Every field the policy shows; for an existing activity its times too."""
 
-    def __init__(self, work, parent=None, uid=None, start=None):
+    def __init__(self, work, parent=None, uid=None, start=None, actions=None):
         super().__init__(_("Attività") if uid else _("Nuova attività"), parent)
-        self.work, self.uid = work, uid
+        self.work, self.uid, self.actions = work, uid, actions
         self.result_uid = uid
         self.setMinimumWidth(600)
         p = work.policy
         e = work.entry(uid) if uid else {}
+        if uid:
+            self._state_box(e)
         form = QFormLayout()
         form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.fields = {}
@@ -421,11 +436,40 @@ class EntryDialog(_Dialog):
         if r.get("companyUid") and not self.company.value():
             self.company.set_value(r["companyUid"])
 
+    def _state_box(self, e):
+        """On top (§8): the state as the Home shows it with the total work time, then what the state allows."""
+        work = self.work
+        shown, since = work.display(e)
+        top = QHBoxLayout()
+        text = display_label(shown) + (" " + _("dalle %s") % clock(model.to_ms(since)) if since else "")
+        top.addWidget(W.Pill(text, states.colour(shown), states.icon(shown)))
+        top.addStretch()
+        top.addWidget(QLabel(f"{KINDS[WORK]} {hm(work.totals(e['uid'])[WORK])}"))
+        self.lay.addLayout(top)
+        if self.actions is None:
+            return
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        for act in entry_actions(work, e):
+            if act.verb in ("delete", "tick"):
+                continue
+            b = QPushButton(act.label)
+            b.setAutoDefault(False)
+            b.clicked.connect(lambda _c=False, a=act: self._act(a))
+            row.addWidget(b)
+        row.addStretch()
+        self.lay.addLayout(row)
+
+    def _act(self, action):
+        self.actions.act(self.uid, action)
+        # the state changed: the form shows it again
+        self.done(2)
+
     def _times_box(self, e):
         box = QGroupBox(field_label(self.work.policy, "times"))
         lay = QVBoxLayout(box)
         totals = self.work.totals(e["uid"])
-        lay.addWidget(QLabel(f"{state_label(e)} · {KINDS[WORK]} {hm(totals[WORK])} · {KINDS[TRAVEL]} "
+        lay.addWidget(QLabel(f"{KINDS[WORK]} {hm(totals[WORK])} · {KINDS[TRAVEL]} "
                              f"{hm(totals[TRAVEL])} · {KINDS[PAUSE]} {hm(totals[PAUSE])}"))
         editable = self.work.policy.setting("editableTimes", True)
         for s in self.work.segments(e["uid"]):
@@ -438,7 +482,7 @@ class EntryDialog(_Dialog):
                 if s.get("endUtcMs"):
                     row.addWidget(W.icon_button("clear", _("Elimina"), lambda s=s: self._remove(s)))
             lay.addLayout(row)
-        if editable and e.get("status") != ACTIVE:
+        if editable and work_closed(self.work, e):
             row = QHBoxLayout()
             row.addStretch()
             row.addWidget(W.button(_("Aggiungi un tratto…"), lambda: self._segment(None), "tonal", "add"))
@@ -501,10 +545,15 @@ class EntryDialog(_Dialog):
         self.accept()
 
 
-def edit_entry(work, uid, parent=None):
-    """The full form of an activity; shown again after its times changed."""
+def work_closed(work, e):
+    """No open segment: a segment may be added by hand."""
+    return work.open_segment(e["uid"]) is None
+
+
+def edit_entry(work, uid, parent=None, actions=None):
+    """The full form of an activity; shown again after its times or its state changed."""
     while True:
-        d = EntryDialog(work, parent, uid=uid)
+        d = EntryDialog(work, parent, uid=uid, actions=actions)
         r = d.exec()
         if r != 2:
             return r
@@ -555,69 +604,35 @@ class SegmentDialog(_Dialog):
         self.accept()
 
 
-class StopDialog(_Dialog):
+def stop(work, uid, parent=None, at=None):
     """
-    After Stop, when details are missing or the activity came from a to-do:
-    the description, the client and whether the to-do is done.
+    Stop. When the activity went out and came back to work without a return trip, the three choices of
+    §3.2; False when the user gave up.
     """
-
-    def __init__(self, work, uid, parent=None):
-        super().__init__(_("Completa l'attività"), parent)
-        self.work, self.uid = work, uid
-        e = work.entry(uid)
-        form = _wrapped()
-        self.description = Description()
-        self.description.setPlainText(e.get("activity") or "")
-        form.addRow(field_label(work.policy, "description"), self.description)
-        self.client = MasterCombo(work, "client")
-        self.client.set_value(e.get("clientUid"))
-        form.addRow(field_label(work.policy, "client"), self.client)
-        self.todo = work.store.get("todo", e["todoUid"]) if e.get("todoUid") else None
-        self.todo_done = QCheckBox(_("Il Da fare «%s» è completato") % (self.todo or {}).get("title", ""))
-        if self.todo and not self.todo.get("done"):
-            form.addRow("", self.todo_done)
-        self.lay.addLayout(form)
-        # "Più tardi" is the way out: it keeps what was typed
-        self.buttons(_("Chiudi l'attività"), [(_("Più tardi"), self.later)], cancel=False)
-
-    def _save(self):
-        self.work.edit(self.uid, activity=self.description.value(), client=self.client.value() or "")
-        if self.todo is not None and self.todo_done.isChecked():
-            now = self.work.clock()
-            done = {"done": True, "doneUtcMs": now, "ignoredUtcMs": None, "updatedUtcMs": now}
-            self.work.store.write("todo", self.todo["uid"], done, now)
-
-    def confirm(self):
-        try:
-            self._save()
-            if not self.description.value():
-                ok = QMessageBox.question(self, self.windowTitle(), _(
-                    "Chiudere senza descrizione? Va bene quando il lavoro si capisce dal cliente."))
-                if ok != QMessageBox.StandardButton.Yes:
-                    return
-                self.work.complete(self.uid, allow_empty=True)
-            else:
-                self.work.complete(self.uid)
-        except WorkError as e:
-            self.fail(e)
-            return
-        self.accept()
-
-    def later(self):
-        try:
-            self._save()
-        except WorkError as e:
-            self.fail(e)
-            return
-        self.reject()
-
-
-def stop(work, uid, parent=None):
-    """Stop, then the stop sheet when the activity is left to complete."""
-    status = work.command(uid, STOP)
-    if status == TO_COMPLETE:
-        StopDialog(work, uid, parent).exec()
-    return status
+    if work.return_trip_offered(uid):
+        box = QMessageBox(parent)
+        box.setWindowTitle(_("Stop"))
+        box.setText(_("L'attività ha un viaggio di andata: cosa fai?"))
+        travel = box.addButton(_("Avvia viaggio di ritorno"), QMessageBox.ButtonRole.ActionRole)
+        end = box.addButton(_("Termina l'attività"), QMessageBox.ButtonRole.ActionRole)
+        both = None
+        if work.return_trip_addable(uid):
+            both = box.addButton(_("Termina l'attività ed aggiungi il viaggio di ritorno"),
+                                 QMessageBox.ButtonRole.ActionRole)
+        box.addButton(QMessageBox.StandardButton.Cancel)
+        box.exec()
+        chosen = box.clickedButton()
+        if chosen is travel:
+            work.travel_back(uid, at)
+        elif chosen is end:
+            work.stop(uid, at)
+        elif chosen is both and both is not None:
+            work.stop(uid, at, return_trip=True)
+        else:
+            return False
+        return True
+    work.stop(uid, at)
+    return True
 
 
 class _DayTime(QWidget):
@@ -679,19 +694,22 @@ class _DayTime(QWidget):
 
 
 class TodoDialog(_Dialog):
-    """A to-do, new or existing: the fields the policy shows."""
+    """A TODO activity, new or existing: the fields the policy shows."""
 
-    def __init__(self, todos, parent=None, uid=None, plan=None):
+    def __init__(self, work, parent=None, uid=None, plan=None):
         super().__init__(_("Da fare") if uid else _("Nuovo Da fare"), parent)
-        self.todos, self.uid = todos, uid
+        self.work, self.uid = work, uid
         self.result_uid = uid
         self.setMinimumWidth(560)
-        work = todos.work
         p = work.policy
-        t = todos.todo(uid) if uid else {}
+        t = work.entry(uid) if uid else {}
+        if uid:
+            shown, since = work.display(t)
+            self.lay.addWidget(W.Pill(display_label(shown), states.colour(shown), states.icon(shown)),
+                               0, Qt.AlignmentFlag.AlignLeft)
         form = QFormLayout()
         form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
-        self.title = QLineEdit(t.get("title") or "")
+        self.title = QLineEdit(t.get("activity") or "")
         form.addRow(_("Titolo"), self.title)
         self.company = MasterCombo(work, "company")
         self.client = MasterCombo(work, "client")
@@ -703,7 +721,8 @@ class TodoDialog(_Dialog):
         self.notes.setTabChangesFocus(True)
         self.notes.setMaximumHeight(110)
         form.addRow(field_label(p, "notes"), self.notes)
-        self.refs = QPlainTextEdit(t.get("refs") or "")
+        refs = "\n".join(r.get("value") or "" for r in work.store.all("externalRef") if r.get("entryUid") == uid)
+        self.refs = QPlainTextEdit(refs)
         self.refs.setTabChangesFocus(True)
         self.refs.setMaximumHeight(60)
         self.refs.setPlaceholderText(_("ticket, link: uno per riga"))
@@ -720,10 +739,9 @@ class TodoDialog(_Dialog):
         if p.field("todoPlan").visible and p.feature("planning"):
             form.addRow(field_label(p, "todoPlan"), self.plan)
         self.priority = QComboBox()
-        self.priority.addItem("—", None)
-        for i in range(1, 6):
-            self.priority.addItem(f"P{i}", i)
-        self.priority.setCurrentIndex(max(0, self.priority.findData(t.get("priority"))))
+        for i in model.PRIORITIES:
+            self.priority.addItem(PRIORITIES[i], i)
+        self.priority.setCurrentIndex(max(0, self.priority.findData(t.get("priority") or 0)))
         if p.field("todoPriority").visible:
             form.addRow(field_label(p, "todoPriority"), self.priority)
         if uid:
@@ -731,7 +749,7 @@ class TodoDialog(_Dialog):
             self.client.set_value(t.get("clientUid"))
         self.lay.addLayout(form)
         extra = []
-        if uid and p.feature("deleteTodos") and not t.get("externalKey"):
+        if uid and (p.feature("deleteTodos") or p.feature("ignoreTodos")):
             extra.append((_("Elimina"), self.delete))
         self.buttons(_("Salva"), extra)
         self.title.setFocus()
@@ -740,7 +758,7 @@ class TodoDialog(_Dialog):
         due_day, due_min, _d = self.due.value()
         plan_day, plan_min, duration = self.plan.value()
         try:
-            self.result_uid = self.todos.save(
+            self.result_uid = self.work.save_todo(
                 self.uid, self.title.text(), company=self.company.value(), client=self.client.value(),
                 notes=self.notes.toPlainText(), refs=self.refs.toPlainText(), due_date=due_day, due_min=due_min,
                 plan_date=plan_day, plan_min=plan_min, duration_min=duration, priority=self.priority.currentData())
@@ -753,7 +771,104 @@ class TodoDialog(_Dialog):
         if QMessageBox.question(self, _("Elimina"), _("Eliminare questo Da fare?")) != QMessageBox.StandardButton.Yes:
             return
         try:
-            self.todos.delete(self.uid)
+            self.work.delete(self.uid)
+        except WorkError as e:
+            self.fail(e)
+            return
+        self.accept()
+
+
+class AbsenceDialog(_Dialog):
+    """
+    An absence (§3.1): the company (none: every one), what kind, notes, from and to day, optionally the
+    times of a permesso; without times one segment per working window of every working day.
+    """
+
+    def __init__(self, work, parent=None, uid=None, first=None):
+        super().__init__(_("Assenza") if uid else _("Nuova assenza"), parent)
+        self.work, self.uid = work, uid
+        self.setMinimumWidth(520)
+        p = work.policy
+        e = work.entry(uid) if uid else {}
+        form = _wrapped()
+        self.company = MasterCombo(work, "company")
+        if p.field("company").visible:
+            form.addRow(field_label(p, "company") + " " + _("(vuota: tutte)"), self.company)
+        self.kind = QComboBox()
+        for k, text in ABSENCE_KINDS.items():
+            self.kind.addItem(text, k)
+        self.notes = QPlainTextEdit()
+        self.notes.setTabChangesFocus(True)
+        self.notes.setMaximumHeight(80)
+        form.addRow(_("Tipo"), self.kind)
+        today = QDate.currentDate()
+        self.first = QDateEdit(QDate(first.year, first.month, first.day) if first else today, calendarPopup=True)
+        self.last = QDateEdit(self.first.date(), calendarPopup=True)
+        self.timed = QCheckBox(_("con orario"))
+        self.start = QTimeEdit(QTime(9, 0))
+        self.end = QTimeEdit(QTime(13, 0))
+        _formatted(self.first, self.last, self.start, self.end)
+        form.addRow(_("Dal giorno"), _row(self.first))
+        form.addRow(_("Al giorno"), _row(self.last))
+        form.addRow("", _row(self.timed, self.start, QLabel("→"), self.end))
+        form.addRow(field_label(p, "notes"), self.notes)
+        self.first.dateChanged.connect(lambda d: self.last.setDate(max(d, self.last.date())))
+        self.timed.toggled.connect(lambda on: (self.start.setEnabled(on), self.end.setEnabled(on)))
+        self.start.setEnabled(False)
+        self.end.setEnabled(False)
+        self.lay.addLayout(form)
+        if uid:
+            self._load(e)
+        extra = []
+        if uid and p.feature("deleteEntries"):
+            extra.append((_("Elimina"), self.delete))
+        self.buttons(_("Salva"), extra)
+
+    def _load(self, e):
+        work = self.work
+        self.company.set_value(e.get("companyUid"))
+        self.kind.setCurrentIndex(max(0, self.kind.findData(e.get("absenceKind") or model.ABSENCE)))
+        self.notes.setPlainText(e.get("notes") or "")
+        segs = work.real_segments(e["uid"])
+        if not segs:
+            return
+        tz = work.tz
+        first = model.from_ms(min(s["startUtcMs"] for s in segs), tz)
+        last = model.from_ms(max(s["endUtcMs"] or s["startUtcMs"] for s in segs), tz)
+        self.first.setDate(QDate(first.year, first.month, first.day))
+        self.last.setDate(QDate(last.year, last.month, last.day))
+        spans = {(model.from_ms(s["startUtcMs"], tz).strftime("%H:%M"),
+                  model.from_ms(s["endUtcMs"], tz).strftime("%H:%M")) for s in segs if s.get("endUtcMs")}
+        if len(spans) == 1:
+            a, b = next(iter(spans))
+            self.timed.setChecked(True)
+            self.start.setTime(QTime.fromString(a, "HH:mm"))
+            self.end.setTime(QTime.fromString(b, "HH:mm"))
+
+    @staticmethod
+    def _date(edit):
+        d = edit.date()
+        return date(d.year(), d.month(), d.day())
+
+    def confirm(self):
+        start = end = None
+        if self.timed.isChecked():
+            start = self.start.time().hour() * 60 + self.start.time().minute()
+            end = self.end.time().hour() * 60 + self.end.time().minute()
+        try:
+            self.work.save_absence(self.uid, self._date(self.first), self._date(self.last),
+                                   company=self.company.value(), absence_kind=self.kind.currentData(),
+                                   notes=self.notes.toPlainText(), start_min=start, end_min=end)
+        except WorkError as e:
+            self.fail(e)
+            return
+        self.accept()
+
+    def delete(self):
+        if QMessageBox.question(self, _("Elimina"), _("Eliminare questa assenza?")) != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.work.delete(self.uid)
         except WorkError as e:
             self.fail(e)
             return

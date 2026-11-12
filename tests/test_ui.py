@@ -95,7 +95,8 @@ class UiTest(unittest.TestCase):
         self.assertIn("Nuova attività…", texts)
         self.assertIn("Sincronizza ora", texts)
         sub = [a.text() for a in t.contextMenu().actions()[0].menu().actions()]
-        self.assertEqual(sub[:4], ["Pausa", "Viaggio", "Sospendi", "Stop"])
+        self.assertEqual(sub[:3], ["Pausa", "Viaggio", "Stop"])
+        self.assertNotIn("Sospendi", sub)
         self.assertIn("Biblioteca · Rete — In lavoro", t.toolTip())
         # middle click: pause, then back to work
         t._pause_or_resume()
@@ -133,13 +134,13 @@ class UiTest(unittest.TestCase):
         from activitytrack_desktop.ui import MainWindow, Tray
         self.pair()
         actions = Actions(self.session)
-        d = forms.TodoDialog(actions.todos)
+        d = forms.TodoDialog(actions.work)
         d.title.setText("Rinnovo certificati")
         d.client.setEditText("Hotel Belvedere")
         d.plan.set(date.today(), 23 * 60 + 30, 15)
         d.confirm()
         self.assertEqual(d.result(), 1)
-        t = self.session.store.get("todo", d.result_uid)
+        t = self.session.store.get("entry", d.result_uid)
         self.assertEqual((t["planStartMin"], t["durationMin"]), (23 * 60 + 30, 15))
         home = Home(actions)
         rows = home.scroll.widget().findChildren(TodoRow)
@@ -159,7 +160,7 @@ class UiTest(unittest.TestCase):
         """A client with a company colour, a tag; at work, suspended, stopped and to-dos."""
         from datetime import date
 
-        from activitytrack.work import SUSPEND, StartRequest
+        from activitytrack.work import StartRequest
         store = self.session.store
         store.pulled({"type": "company", "uid": "co", "rev": 1, "fields": {"name": "Alfa", "color": 0x3D7BEA}})
         store.pulled({"type": "client", "uid": "c1", "rev": 1, "fields": {"name": "Biblioteca", "companyUid": "co"}})
@@ -167,11 +168,12 @@ class UiTest(unittest.TestCase):
         w = actions.work
         now = w.clock()
         old = w.start(StartRequest(client="c1", activity="", start_ms=now - 200 * 60_000, end_ms=now - 150 * 60_000))
+        w.edit(old, client="")
         b = w.start(StartRequest(client="c1", activity="Stampanti", start_ms=now - 120 * 60_000))
-        w.command(b, SUSPEND, at=now - 100 * 60_000)
+        w.suspend(b, at=now - 100 * 60_000)
         a = w.start(StartRequest(client="c1", activity="Rete", tags=["rete"], start_ms=now - 60 * 60_000))
-        actions.todos.save(None, "Backup", plan_date=date.today(), plan_min=23 * 60, duration_min=30)
-        actions.todos.save(None, "Inventario")
+        w.save_todo(None, "Backup", plan_date=date.today(), plan_min=23 * 60, duration_min=30)
+        w.save_todo(None, "Inventario")
         return a, b, old
 
     def test_the_home_light_and_dark(self):
@@ -192,7 +194,7 @@ class UiTest(unittest.TestCase):
                 big = body.findChildren(BigCard)
                 self.assertEqual([c.uid for c in big], [a])
                 self.assertEqual(big[0].band, "#3d7bea")
-                self.assertEqual(set(big[0].commands), {"PAUSE", "TRAVEL", "SUSPEND", "STOP"})
+                self.assertEqual(set(big[0].commands), {"PAUSE", "TRAVEL", "stop"})
                 self.assertEqual([c.uid for c in body.findChildren(SmallCard)], [b])
                 self.assertEqual([r.uid for r in body.findChildren(EntryRow)], [old])
                 self.assertEqual(len(body.findChildren(TodoRow)), 2)
@@ -258,7 +260,7 @@ class UiTest(unittest.TestCase):
         w.home.select(b)
         w.shortcuts["stop"].trigger()
         self.assertEqual(store.get("entry", b)["status"], "CLOSED")
-        self.assertEqual(store.get("entry", a)["status"], "ACTIVE")
+        self.assertEqual(store.get("entry", a)["mode"], "WORK")
         # two at work: the user chooses in the small list
         from activitytrack.work import StartRequest
         c = actions.work.start(StartRequest(client="c1", activity="Terza"))
@@ -267,13 +269,78 @@ class UiTest(unittest.TestCase):
         self.assertEqual([uid for uid, _t in choose.call_args[0][2]], [c, a])
         self.assertEqual(store.get("entry", a)["mode"], "PAUSE")
         self.assertEqual(store.get("entry", c)["mode"], "WORK")
-        # a stop that leaves details missing opens the stop sheet
+        # no stop sheet any more: a closed activity without a description is simply DONE
         d = actions.work.start(StartRequest(client="c1", activity=""))
         w.home.select(d)
-        with mock.patch("activitytrack_desktop.forms.StopDialog") as sheet:
-            w.shortcuts["stop"].trigger()
-        sheet.assert_called_once()
-        self.assertEqual(store.get("entry", d)["status"], "TO_COMPLETE")
+        w.shortcuts["stop"].trigger()
+        self.assertEqual(store.get("entry", d)["status"], "CLOSED")
+        self.assertEqual(actions.work.display(store.get("entry", d))[0], "DONE")
+
+    def test_every_displayed_state_has_an_icon_and_a_colour(self):
+        from activitytrack import model
+        from activitytrack_desktop import icons, states
+        self.assertEqual(set(states.LOOK), set(model.DISPLAY_STATES))
+        for state in model.DISPLAY_STATES:
+            self.assertTrue(states.icon(state) in icons.PATHS or states.icon(state) == "suspend", state)
+        # the bin and the plan are both grey (§2.2)
+        self.assertEqual(len({states.colour(s) for s in model.DISPLAY_STATES}), len(model.DISPLAY_STATES) - 1)
+
+    def test_the_stop_offers_the_return_trip_and_travel_asks_if_work_is_done(self):
+        from activitytrack.work import StartRequest, TRAVEL, WORK
+        from activitytrack_desktop import forms
+        from activitytrack_desktop.home import Actions
+        self.pair()
+        actions = Actions(self.session)
+        w = actions.work
+        now = w.clock()
+        self.session.store.pulled({"type": "client", "uid": "c1", "rev": 1, "fields": {"name": "B", "archived": False}})
+        uid = w.start(StartRequest(client="c1", activity="x", mode=TRAVEL, start_ms=now - 120 * 60_000))
+        w.switch(uid, WORK, at=now - 100 * 60_000)
+        self.assertTrue(w.return_trip_offered(uid))
+        chosen = {}
+
+        class Box:
+            def __init__(self, parent=None):
+                self.buttons = []
+
+            def setWindowTitle(self, t):
+                pass
+
+            setText = setWindowTitle
+
+            def addButton(self, text, role=None):
+                self.buttons.append(text)
+                return text
+
+            def exec(self):
+                pass
+
+            def clickedButton(self):
+                return self.buttons[chosen["i"]]
+            StandardButton = forms.QMessageBox.StandardButton
+            ButtonRole = forms.QMessageBox.ButtonRole
+        with mock.patch.object(forms, "QMessageBox", Box):
+            # the third choice: stop and add the return trip
+            chosen["i"] = 2
+            self.assertTrue(forms.stop(w, uid))
+        self.assertEqual(w.entry(uid)["status"], "CLOSED")
+        self.assertEqual([s["kind"] for s in w.segments(uid)], [TRAVEL, WORK, TRAVEL])
+
+    def test_an_absence_from_the_dialog(self):
+        from datetime import date
+
+        from activitytrack_desktop import forms
+        from activitytrack_desktop.home import Actions
+        self.pair()
+        actions = Actions(self.session)
+        d = forms.AbsenceDialog(actions.work, first=date(2026, 11, 16))
+        d.kind.setCurrentIndex(d.kind.findData("LEAVE"))
+        d.timed.setChecked(True)
+        d.confirm()
+        self.assertEqual(d.result(), 1)
+        (a,) = [e for e in actions.work.entries() if e["kind"] == "ABSENCE"]
+        self.assertEqual((a["absenceKind"], a["companyUid"]), ("LEAVE", None))
+        self.assertEqual(actions.work.display(a)[0], "ABSENCE")
 
     def test_the_theme_follows_the_system(self):
         from activitytrack_desktop import theme
@@ -319,12 +386,12 @@ class UiTest(unittest.TestCase):
         from activitytrack_desktop.home import Actions, TodoRow
         self.pair()
         actions = Actions(self.session)
-        uid = actions.todos.save(None, "Backup", plan_date=date.today(), plan_min=23 * 60, duration_min=30)
+        uid = actions.work.save_todo(None, "Backup", plan_date=date.today(), plan_min=23 * 60, duration_min=30)
         # the user's own snooze (Promemoria), not the policy's default
         QSettings().setValue("reminders/planSnoozeMin", 25)
         try:
-            t = self.session.store.get("todo", uid)
-            row = TodoRow(actions, t, "planned")
+            t = self.session.store.get("entry", uid)
+            row = TodoRow(actions, t, "PLANNED")
             more = row.findChildren(QToolButton)[0]
             self.assertIn("Posticipa di 25 min", self.menu_texts(more.menu()))
             self.assertEqual(actions.snooze_min(), 25)

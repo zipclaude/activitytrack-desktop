@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QMenu, QMessageBox, QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget,
 )
 
-from activitytrack import pairing, texts
+from activitytrack import homelist, pairing, texts
 from activitytrack.i18n import _
 
 from . import __version__, icons, theme, widgets as W
@@ -457,34 +457,35 @@ class Tray(QSystemTrayIcon):
 
     def _pause_or_resume(self):
         """Middle click: pause the activity at work, or resume the one paused."""
-        from activitytrack.work import ACTIVE, PAUSE, WORK
-        running = [e for e in self.actions.work.running() if e.get("status") == ACTIVE]
+        from activitytrack.work import PAUSE, WORK
+        work = self.actions.work
+        running = [e for e in work.running() if work.open_segment(e["uid"]) is not None]
         if len(running) == 1:
             e = running[0]
-            self.actions.command(e["uid"], WORK if e.get("mode") == PAUSE else PAUSE)
+            self.actions.command(e["uid"], WORK if work.open_segment(e["uid"])["kind"] == PAUSE else PAUSE)
 
     def _running(self):
         return self.actions.work.running() if self.actions is not None and self.session.account else []
 
     def refresh(self):
         from .home import commands
-        from activitytrack.texts import hm, state_label
-        from activitytrack.work import ACTIVE
+        from activitytrack.texts import display_label, hm
 
         sync_text = texts.sync_state(self.session, self.service.state, self.service.detail)
         alert = texts.sync_needs_attention(self.session, self.service.state)
         running = self._running()
         first = running[0] if running else None
         state = icons.IDLE
-        if first is not None and first.get("status") == ACTIVE:
+        seg = self.actions.work.open_segment(first["uid"]) if first is not None else None
+        if seg is not None:
             modes = {"WORK": icons.WORK, "PAUSE": icons.PAUSE, "TRAVEL": icons.TRAVEL}
-            state = modes.get(first.get("mode"), icons.IDLE)
+            state = modes.get(seg["kind"], icons.IDLE)
         self.setIcon(icons.icon(state, alert))
         lines = ["ActivityTrack"]
         work = self.actions.work if self.actions is not None else None
         for e in running[:3]:
             t = work.totals(e["uid"])
-            lines.append(f"{work.label(e)} — {state_label(e)} ({hm(t['WORK'])})")
+            lines.append(f"{work.label(e)} — {display_label(work.display(e)[0])} ({hm(t['WORK'])})")
         if self.session.account is not None and not running:
             lines.append(_("Nessuna attività in corso"))
         if alert or not running:
@@ -494,21 +495,22 @@ class Tray(QSystemTrayIcon):
         m = self._menu
         m.clear()
         for e in running[:self.MENU_ENTRIES]:
-            sub = m.addMenu(f"{work.label(e)} — {state_label(e)}")
-            for text, cmd in commands(e, work.policy):
-                sub.addAction(text, lambda u=e["uid"], c=cmd: self.actions.command(u, c))
+            sub = m.addMenu(f"{work.label(e)} — {display_label(work.display(e)[0])}")
+            for act in commands(work, e):
+                sub.addAction(act.label, lambda u=e["uid"], a=act: self.actions.act(u, a))
             sub.addSeparator()
             sub.addAction(_("Modifica…"), lambda u=e["uid"]: self.actions.edit(u))
         if self.actions is not None and self.session.account is not None:
             new = m.addAction(_("Nuova attività…"), lambda: self.actions.new_entry())
             new.setEnabled(work.policy.feature("entries"))
+            m.addAction(_("Nuova assenza…"), lambda: self.actions.new_absence())
             if work.policy.feature("todos"):
-                startable = self.actions.todos.startable() if work.policy.feature("entries") else []
+                startable = homelist.startable(work) if work.policy.feature("entries") else []
                 if startable:
                     sub = m.addMenu(_("Avvia Da fare"))
                     for t in startable:
                         who = work.name("client", t.get("clientUid"))
-                        sub.addAction(" · ".join(x for x in (t.get("title"), who) if x),
+                        sub.addAction(" · ".join(x for x in (t.get("activity"), who) if x),
                                       lambda u=t["uid"]: self.actions.start_todo(u))
                 m.addAction(_("Nuovo Da fare…"), lambda: self.actions.new_todo())
             m.addSeparator()

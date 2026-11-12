@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
 from activitytrack import formats, reminders as R
 from activitytrack.i18n import _
 from activitytrack.texts import clock
-from activitytrack.work import PAUSE, STOP, TO_COMPLETE, WORK, WorkError
+from activitytrack.work import PAUSE, WorkError
 
 from .notify import DEFAULT
 
@@ -54,7 +54,7 @@ class Reminders(QObject):
         self.actions = actions
         self.notifier = notifier
         self.show_window = show_window
-        self.sources = R.Sources(actions.work, actions.todos)
+        self.sources = R.Sources(actions.work)
         self.timer = QTimer(self, singleShot=True, timeout=self.fire)
         notifier.answered.connect(self.answer)
         actions.changed.connect(self.arm)
@@ -65,7 +65,7 @@ class Reminders(QObject):
         return R.config_of(self.actions.work.policy, local_intervals())
 
     def _inputs(self, now):
-        tz = self.actions.todos.tz()
+        tz = self.actions.work.tz
         store = self.sources
         planner = R.Planner(self.config(), store.windows("workSchedule"), store.windows("lunchBreak"), tz,
                             store.days_off())
@@ -75,7 +75,7 @@ class Reminders(QObject):
         return planner, entries, todos, day
 
     def _now(self):
-        return datetime.now(self.actions.todos.tz())
+        return datetime.now(self.actions.work.tz)
 
     def _enabled(self, r):
         return switched_on(r.kind)
@@ -128,10 +128,10 @@ class Reminders(QObject):
             return (_("Nessuna attività oggi"), _("Registra un'assenza o avvia un'attività."),
                     [("absent", _("Assente tutto il giorno")), ("start", _("Avvia un'attività"))])
         if r.kind == R.PLANNED:
-            t = self.actions.session.store.get("todo", r.key) or {}
+            t = self.actions.session.store.get("entry", r.key) or {}
             start = r.at + timedelta(minutes=self.config()["planLeadMin"])
             who = w.name("client", t.get("clientUid")) or w.name("company", t.get("companyUid"))
-            return (_("%s alle %s") % (t.get("title") or "", formats.time(start)), who,
+            return (_("%s alle %s") % (t.get("activity") or "", formats.time(start)), who,
                     [("start", _("Avvia")), ("postpone", _("Posticipa di %d min") % self.config()["planSnoozeMin"]),
                      ("replan", _("Ripianifica"))])
         e = self.actions.session.store.get("entry", r.key) or {}
@@ -176,7 +176,10 @@ class Reminders(QObject):
             elif action == "stop_at":
                 self.stop_at(uid, self.sources.last_confirmed(uid) or now)
         elif kind == R.PAUSE_KIND:
-            a.command(uid, WORK if action == "resume" else STOP)
+            if action == "resume":
+                a.resume(uid)
+            else:
+                a.do(uid, "stop")
         elif kind == R.DAY_START:
             if action == "absent":
                 w.absent_all_day(datetime.fromisoformat(uid).date())
@@ -195,12 +198,7 @@ class Reminders(QObject):
 
     def stop_at(self, uid, at_ms):
         """Stop at a past time ("when I last said yes", the planned end), then the stop sheet if needed."""
-        from . import forms
-        a = self.actions
-        status = a.work.command(uid, STOP, at=at_ms)
-        if status == TO_COMPLETE:
-            forms.StopDialog(a.work, uid, a._parent()).exec()
-        a.changed.emit()
+        self.actions.do(uid, "stop", at=at_ms)
 
 
 def ask(title, body, buttons):

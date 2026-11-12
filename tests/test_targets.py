@@ -29,7 +29,10 @@ class TargetsTest(unittest.TestCase):
         return self.work.start(StartRequest(client="c1", activity="x", start_ms=NOW - minutes_ago * MIN))
 
     def at(self, uid, cmd, minutes_ago):
-        self.work.command(uid, cmd, at=NOW - minutes_ago * MIN)
+        if cmd == SUSPEND:
+            self.work.suspend(uid, at=NOW - minutes_ago * MIN)
+        else:
+            self.work.switch(uid, cmd, at=NOW - minutes_ago * MIN)
 
     def test_nothing_running(self):
         w = self.work
@@ -115,5 +118,5 @@ class TargetsTest(unittest.TestCase):
         self.assertEqual(targets.stop_target(w, a), a)
         # a card no longer running is not a target
         self.assertEqual(targets.stop_target(w, "gone"), b)
-        self.work.command(b, "STOP")
+        self.work.stop(b)
         self.assertEqual(targets.stop_target(w, b), a)

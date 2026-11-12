@@ -17,13 +17,16 @@ from PyQt6.QtCore import QObject, Qt, pyqtSignal as Signal
 from PyQt6.QtGui import QColor, QFont, QPalette
 from PyQt6.QtWidgets import QApplication
 
-from activitytrack.work import ACTIVE, CLOSED, PAUSE, SUSPENDED, TO_COMPLETE, TRAVEL, WORK
+from activitytrack.model import PAUSE, TRAVEL, WORK
 
 # the app's colours of the commands and states (CommandButtons.kt)
 GREEN, YELLOW, BLUE, ORANGE, RED = "#2e7d32", "#f9a825", "#1565c0", "#ef6c00", "#c62828"
 # dark icon and text on yellow: white would fail the contrast
 ON_YELLOW = "#212121"
-COMMANDS = {WORK: GREEN, PAUSE: YELLOW, TRAVEL: BLUE, "SUSPEND": ORANGE, "STOP": RED, "REOPEN": ORANGE}
+COMMANDS = {WORK: GREEN, PAUSE: YELLOW, TRAVEL: BLUE, "STOP": RED, "REOPEN": ORANGE}
+# the other displayed states (docs/ACTIVITY-MODEL.md §2.2): bin and plan grey, absence pink, late brown,
+# a to-do white, done greenish, incomplete reddish
+GREY, PINK, BROWN, WHITE, GREENISH, REDDISH = "#6f7680", "#d81b8c", "#8d5524", "#ffffff", "#43a047", "#e57373"
 # a tag without a colour, a company without one in the agenda (Colors.kt NO_COLOR)
 NO_COLOR = "#6b7280"
 
@@ -378,21 +381,9 @@ QCalendarWidget QToolButton:hover {{ background: {t.surface3}; }}
 """
 
 
-def state_colour(entry):
-    """The colour of an activity's state (stateStyle): the command that leads to it; None when closed."""
-    status = entry.get("status")
-    if status == ACTIVE:
-        return COMMANDS.get(entry.get("mode"), GREEN)
-    if status == SUSPENDED:
-        return ORANGE
-    if status == TO_COMPLETE:
-        return RED
-    return None if status == CLOSED else NO_COLOR
-
-
 def on_colour(colour):
     """The icon and text colour on a command's colour."""
-    return ON_YELLOW if QColor(colour) == QColor(YELLOW) else "#ffffff"
+    return ON_YELLOW if QColor(colour) in (QColor(YELLOW), QColor(WHITE)) else "#ffffff"
 
 
 def rgb(value):

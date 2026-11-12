@@ -18,20 +18,16 @@ from PyQt6.QtWidgets import (
 from activitytrack import formats, texts
 from activitytrack.i18n import _
 from activitytrack.policy import stored
-from activitytrack.texts import KINDS, FIELDS, clock, error_text, hm, state_label
-from activitytrack.todos import DEFAULT_SHOW, SHOWS, WINDOWS, Todos
-from activitytrack.work import (
-    PAUSE, REOPEN, STOP, SUSPEND, SUSPENDED, TO_COMPLETE, TRAVEL, WORK, Work, WorkError,
-)
+from activitytrack import homelist, model
+from activitytrack.homelist import DEFAULT_SHOW, SHOWS, WINDOWS
+from activitytrack.texts import KINDS, FIELDS, clock, display_label, entry_actions, error_text, hm
+from activitytrack.work import PAUSE, TRAVEL, WORK, Work, WorkError
 
-from . import forms, icons, targets, theme, widgets as W
+from . import forms, icons, states, targets, theme, widgets as W
 
-# the app's colours of the modes
-COLOURS = {WORK: theme.GREEN, PAUSE: theme.YELLOW, TRAVEL: theme.BLUE, SUSPENDED: theme.ORANGE,
-           TO_COMPLETE: theme.RED}
-# the round buttons of the commands: icon and colour (CommandButtons.kt)
+# the round buttons of the commands: icon and colour (CommandButtons.kt); a command is its kind, or "stop"
 COMMAND_LOOK = {WORK: ("play", theme.GREEN), PAUSE: ("pause", theme.YELLOW), TRAVEL: ("travel", theme.BLUE),
-                SUSPEND: ("suspend", theme.ORANGE), STOP: ("stop", theme.RED)}
+                "stop": ("stop", theme.RED)}
 # the window's keys (docs/DESIGN.md §6.5), shown in the tooltips and menus
 KEYS = {"new_entry": "Ctrl+N", "pause": "Ctrl+P", "stop": "Ctrl+T", "new_todo": "Ctrl+D", "find": "Ctrl+F",
         "sync": "F5"}
@@ -39,9 +35,9 @@ KEYS = {"new_entry": "Ctrl+N", "pause": "Ctrl+P", "stop": "Ctrl+T", "new_todo": 
 COLUMN = 920
 
 
-def commands(entry, policy):
-    """[(label, command)] the state allows, as the app's card buttons (the library's, for every interface)."""
-    return texts.entry_commands(entry, policy)
+def commands(work, entry):
+    """[Action] the state allows, as the app's card buttons (the library's, for every interface); no delete."""
+    return [a for a in entry_actions(work, entry) if a.verb not in ("delete", "restore")]
 
 
 class Actions(QObject):
@@ -58,7 +54,6 @@ class Actions(QObject):
         super().__init__(parent)
         self.session = session
         self.work = Work(session.store, stored(session.store), zone=_zone())
-        self.todos = Todos(self.work)
 
     def refresh_policy(self):
         self.work.policy = stored(self.session.store)
@@ -99,17 +94,55 @@ class Actions(QObject):
         if forms.EntryDialog(self.work, self._parent()).exec():
             self._done()
 
-    def command(self, uid, cmd):
+    def _ask(self, title, text):
+        ok = QMessageBox.question(self._parent(), title, text)
+        return ok == QMessageBox.StandardButton.Yes
+
+    def do(self, uid, verb, kind=None, at=None):
+        """One command by name (Work.perform), with the questions of §3: stop, travel from work, reopen, delete."""
         self.refresh_policy()
         try:
-            if cmd == STOP:
-                forms.stop(self.work, uid, self._parent())
+            if verb == "stop":
+                if not forms.stop(self.work, uid, self._parent(), at):
+                    return
+            elif verb == "travel_from_work":
+                answer = QMessageBox.question(
+                    self._parent(), KINDS[TRAVEL], _("Hai completato l'attività lavorativa?"),
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                    | QMessageBox.StandardButton.Cancel)
+                if answer == QMessageBox.StandardButton.Cancel:
+                    return
+                self.work.travel_from_work(uid, answer == QMessageBox.StandardButton.Yes, at)
+            elif verb == "reopen" and not self._ask(_("Riapri"), _("Riaprire l'attività?")):
+                return
+            elif verb == "delete" and not self._ask(
+                    _("Elimina"), _("Eliminare? Si elimina anche sugli altri dispositivi; si può ripristinare.")):
+                return
             else:
-                self.work.command(uid, cmd)
+                self.work.perform(uid, verb, kind, at)
         except WorkError as e:
             self._fail(e)
             return
         self._done()
+
+    def act(self, uid, action):
+        """A button of texts.entry_actions."""
+        self.do(uid, action.verb, action.kind)
+
+    def command(self, uid, kind):
+        """The pause and resume keys and menus: PAUSE pauses, WORK resumes a pause or a suspended activity."""
+        if kind == PAUSE:
+            self.do(uid, "switch", PAUSE)
+        else:
+            self.resume(uid)
+
+    def resume(self, uid, at=None):
+        """Riprendi: the kind open before a pause; from a suspended activity, work."""
+        seg = self.work.open_segment(uid)
+        if seg is None:
+            self.do(uid, "resume", WORK, at)
+        else:
+            self.do(uid, "switch", self.work.resume_kind(uid), at)
 
     def _pick(self, target, title):
         """The uid of a target (targets.py); a list is the user's choice in a small list."""
@@ -118,7 +151,7 @@ class Actions(QObject):
         rows = []
         for uid in target:
             e = self.session.store.get("entry", uid) or {}
-            rows.append((uid, f"{self.work.label(e)} — {state_label(e)}"))
+            rows.append((uid, f"{self.work.label(e)} — {display_label(self.work.display(e)[0])}"))
         return W.choose(self._parent(), title, rows)
 
     def pause_or_resume(self):
@@ -137,23 +170,20 @@ class Actions(QObject):
             return
         uid = self._pick(targets.stop_target(self.work, focused), _("Quale attività fermare?"))
         if uid is not None:
-            self.command(uid, STOP)
+            self.do(uid, "stop")
 
     def edit(self, uid):
+        """The detail of an activity: the to-do and absence dialogs, else the full form."""
         self.refresh_policy()
+        e = self.work.entry(uid)
+        if e.get("kind") == model.ABSENCE:
+            return self.edit_absence(uid)
+        if e.get("status") == model.TODO and e.get("deletedUtcMs") is None:
+            return self.edit_todo(uid)
         try:
-            forms.edit_entry(self.work, uid, self._parent())
-        except WorkError as e:
-            self._fail(e)
-            return
-        self._done()
-
-    def complete(self, uid):
-        self.refresh_policy()
-        try:
-            forms.StopDialog(self.work, uid, self._parent()).exec()
-        except WorkError as e:
-            self._fail(e)
+            forms.edit_entry(self.work, uid, self._parent(), self)
+        except WorkError as ex:
+            self._fail(ex)
             return
         self._done()
 
@@ -167,22 +197,25 @@ class Actions(QObject):
         self._done()
 
     def start_todo(self, uid):
-        t = self.session.store.get("todo", uid)
+        t = self.session.store.get("entry", uid)
         if t is not None:
             self.new_entry(todo=t)
 
     def todo_done(self, uid, done=True):
-        self._do(self.todos.set_done, uid, done)
+        self._do(self.work.tick if done else self.work.untick, uid)
 
-    def todo_ignore(self, uid, ignored=True):
-        self._do(self.todos.set_ignored, uid, ignored)
+    def todo_ignore(self, uid):
+        """Into the bin (policy ignoreTodos maps to delete)."""
+        self._do(self.work.delete, uid)
 
     def todo_reopen(self, uid):
-        self._do(self.todos.reopen, uid)
+        """A ticked-off to-do is TODO again, a deleted one is restored."""
+        e = self.work.entry(uid)
+        self._do(self.work.restore if e.get("deletedUtcMs") is not None else self.work.untick, uid)
 
     def todo_postpone(self, uid):
         """Later by the user's snooze (Promemoria), within the policy."""
-        self._do(self.todos.postpone, uid, self.snooze_min())
+        self._do(self.work.postpone, uid, self.snooze_min())
 
     def snooze_min(self):
         """The minutes of a postpone: the user's (Promemoria) within the policy, the menus' and the reminders'."""
@@ -191,13 +224,13 @@ class Actions(QObject):
         return config_of(self.work.policy, local_intervals())["planSnoozeMin"]
 
     def reopen_entry(self, uid):
-        self._do(self.work.command, uid, REOPEN)
+        self.do(uid, "reopen", WORK)
 
     def new_todo(self, plan=None):
         if self.session.account is None:
             return
         self.refresh_policy()
-        d = forms.TodoDialog(self.todos, self._parent(), plan=plan)
+        d = forms.TodoDialog(self.work, self._parent(), plan=plan)
         d.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
         if d.exec():
             self._done()
@@ -205,7 +238,26 @@ class Actions(QObject):
     def edit_todo(self, uid):
         self.refresh_policy()
         try:
-            ok = forms.TodoDialog(self.todos, self._parent(), uid=uid).exec()
+            ok = forms.TodoDialog(self.work, self._parent(), uid=uid).exec()
+        except WorkError as e:
+            self._fail(e)
+            return
+        if ok:
+            self._done()
+
+
+    def new_absence(self, first=None):
+        if self.session.account is None:
+            return
+        self.refresh_policy()
+        d = forms.AbsenceDialog(self.work, self._parent(), first=first)
+        if d.exec():
+            self._done()
+
+    def edit_absence(self, uid):
+        self.refresh_policy()
+        try:
+            ok = forms.AbsenceDialog(self.work, self._parent(), uid=uid).exec()
         except WorkError as e:
             self._fail(e)
             return
@@ -285,10 +337,9 @@ class BigCard(W.Surface):
         top.addLayout(side)
         outer.addLayout(top)
 
-        since = open_seg["startUtcMs"] if open_seg else work.last_boundary(self.uid)
-        colour = theme.state_colour(entry) or theme.NO_COLOR
-        state = state_label(entry) + (" " + _("dalle %s") % clock(since) if since else "")
-        self.pill = W.Pill(state, colour, W.state_icon(entry))
+        shown, since = work.display(entry)
+        text_ = display_label(shown) + (" " + _("dalle %s") % formats.time(since) if since else "")
+        self.pill = W.Pill(text_, states.colour(shown), states.icon(shown))
         outer.addWidget(self.pill)
         if entry.get("plannedEndUtcMs"):
             outer.addWidget(W.label(_("Fine prevista alle %s") % clock(entry["plannedEndUtcMs"]), "small"))
@@ -309,12 +360,14 @@ class BigCard(W.Surface):
         row.setSpacing(10)
         row.setContentsMargins(0, 6, 0, 0)
         self.commands = {}
-        for text_, cmd in commands(entry, work.policy):
-            icon, colour = COMMAND_LOOK[cmd]
-            key = KEYS["stop"] if cmd == STOP else KEYS["pause"] if cmd == PAUSE or text_ == _("Riprendi") else ""
-            c = W.Command(text_, icon, colour, lambda u=self.uid, c=cmd: actions.command(u, c),
-                          tip=W.with_key(text_, key))
-            self.commands[cmd] = c
+        for act in commands(work, entry):
+            name = act.kind or act.verb
+            icon, colour = COMMAND_LOOK.get(name, ("play", theme.ORANGE))
+            key = KEYS["stop"] if act.verb == "stop" else KEYS["pause"] if act.kind == PAUSE or act.label == _(
+                "Riprendi") else ""
+            c = W.Command(act.label, icon, colour, lambda u=self.uid, a=act: actions.act(u, a),
+                          tip=W.with_key(act.label, key))
+            self.commands[name] = c
             row.addWidget(c)
         row.addStretch()
         edit = W.icon_button("edit", _("Modifica…"), lambda: actions.edit(self.uid))
@@ -338,8 +391,14 @@ class EmptyCard(W.Surface):
         row = QHBoxLayout()
         row.setSpacing(28)
         row.addStretch()
-        allowed = work.policy.feature("entries") and actions.session.account is not None
-        self.start = W.Command(_("Avvia"), "play", theme.GREEN, lambda: actions.new_entry(), 64,
+        paired = actions.session.account is not None
+        allowed = work.policy.feature("entries") and paired
+        self.todo = W.Command(_("Da fare"), "checkbox", theme.GREY, lambda: actions.new_todo(), 64,
+                              W.with_key(_("Nuovo Da fare"), KEYS["new_todo"]))
+        self.todo.button.setEnabled(paired and work.policy.feature("todos"))
+        self.todo.setVisible(work.policy.feature("todos"))
+        row.addWidget(self.todo)
+        self.start = W.Command(KINDS[WORK], "play", theme.GREEN, lambda: actions.new_entry(), 64,
                                W.with_key(_("Nuova attività"), KEYS["new_entry"]))
         self.start.button.setEnabled(allowed)
         row.addWidget(self.start)
@@ -348,6 +407,10 @@ class EmptyCard(W.Surface):
                                     _("Nuovo viaggio"))
             self.travel.button.setEnabled(allowed)
             row.addWidget(self.travel)
+        self.absence = W.Command(KINDS[model.ABSENCE], "dot", theme.PINK, lambda: actions.new_absence(), 64,
+                                 _("Nuova assenza"))
+        self.absence.button.setEnabled(paired)
+        row.addWidget(self.absence)
         row.addStretch()
         lay.addLayout(row)
 
@@ -376,7 +439,8 @@ class SmallCard(W.Surface):
         text.addWidget(title)
         line = QHBoxLayout()
         line.setSpacing(8)
-        pill = W.Pill(state_label(entry), theme.state_colour(entry) or theme.NO_COLOR, W.state_icon(entry))
+        shown = work.display(entry)[0]
+        pill = W.Pill(display_label(shown), states.colour(shown), states.icon(shown))
         pill.setFont(theme.font("label", QFont.Weight.DemiBold))
         line.addWidget(pill)
         t = work.totals(self.uid)
@@ -386,7 +450,7 @@ class SmallCard(W.Surface):
         lay.addLayout(text, 1)
         dots = W.TagDots(entry.get("tags"), tags)
         lay.addWidget(dots, 0, Qt.AlignmentFlag.AlignTop)
-        resting = entry.get("status") == SUSPENDED or entry.get("mode") == PAUSE
+        resting = shown in (model.SUSPENDED, PAUSE)
         cmd = WORK if resting else PAUSE
         icon, colour = COMMAND_LOOK[cmd]
         name = _("Riprendi") if resting else _("Pausa")
@@ -443,9 +507,8 @@ def _side(when, extra="", alert=False, dots=None):
 
 class TodoRow(W.Surface):
     """
-    A to-do of the lists: its mark, the title, "client · Da fare · state";
-    when on the right; start and done at hand, the rest in a menu. A click
-    opens it.
+    A TODO activity of the lists: its mark (the displayed state), the title, "client · Da fare · state";
+    when on the right; start and done at hand, the rest in a menu. A click opens it.
     """
 
     def __init__(self, actions, t, st, parent=None, kind_word=True):
@@ -454,18 +517,18 @@ class TodoRow(W.Surface):
                          parent)
         uid = t["uid"]
         self.uid = uid
-        over = st in ("done", "ignored")
-        self.outlined = st == "ignored"
-        self.clicked.connect(lambda: actions.edit_todo(uid))
+        over = st in (model.DONE, model.DELETED)
+        self.outlined = st == model.DELETED
+        self.clicked.connect(lambda: actions.edit(uid))
         lay = _row_shell(self, st)
         who = work.name("client", t.get("clientUid")) or work.name("company", t.get("companyUid"))
-        parts = [who, _("Da fare") if kind_word else "", texts.TODO_STATES.get(st, "")]
+        parts = [who, _("Da fare") if kind_word else "", display_label(st) if st != model.TODO else ""]
         if t.get("priority") and not over:
-            parts.append(f"P{t['priority']}")
-        box, self.title, self.sub = _texts(t.get("title") or "", " · ".join(x for x in parts if x), over,
-                                           st == "ignored", st == "overdue")
+            parts.append(texts.PRIORITIES.get(t["priority"], ""))
+        box, self.title, self.sub = _texts(t.get("activity") or "", " · ".join(x for x in parts if x), over,
+                                           st == model.DELETED, st == model.LATE)
         lay.addLayout(box, 1)
-        lay.addLayout(_side(texts.todo_when(t, actions.todos.tz()), alert=st == "overdue"))
+        lay.addLayout(_side(texts.todo_when(t, work.tz), alert=st == model.LATE))
         if not over:
             if policy.feature("entries"):
                 start = W.RoundButton("play", theme.GREEN, 36, _("Avvia"))
@@ -475,21 +538,21 @@ class TodoRow(W.Surface):
             done.clicked.connect(lambda _c=False: actions.todo_done(uid))
             lay.addWidget(done)
         else:
-            again = W.RoundButton("restore", None, 36, _("Riapri"))
+            again = W.RoundButton("restore", None, 36, _("Ripristina") if st == model.DELETED else _("Riapri"))
             again.clicked.connect(lambda _c=False: actions.todo_reopen(uid))
             lay.addWidget(again)
         menu = QMenu(self)
         if not over and t.get("planDate") and policy.feature("planning"):
             menu.addAction(_("Posticipa di %d min") % actions.snooze_min(), lambda: actions.todo_postpone(uid))
-        if not over and policy.feature("ignoreTodos"):
-            menu.addAction(_("Ignora"), lambda: actions.todo_ignore(uid))
-        menu.addAction(_("Modifica…"), lambda: actions.edit_todo(uid))
+        if not over and (policy.feature("ignoreTodos") or policy.feature("deleteTodos")):
+            menu.addAction(_("Elimina"), lambda: actions.do(uid, "delete"))
+        menu.addAction(_("Modifica…"), lambda: actions.edit(uid))
         self.more = W.icon_button("more", _("Altro"), menu=menu)
         lay.addWidget(self.more)
 
 
 class EntryRow(W.Surface):
-    """A stopped activity of the Home list: complete it (a click too, when details are missing), or open it."""
+    """A stopped activity of the Home list: a click opens it; INCOMPLETE ones are marked and in red."""
 
     def __init__(self, actions, e, end, tags=None, parent=None):
         work = actions.work
@@ -497,20 +560,19 @@ class EntryRow(W.Surface):
                          parent)
         uid = e["uid"]
         self.uid = uid
-        missing = e.get("status") == TO_COMPLETE
-        self.clicked.connect(lambda: actions.complete(uid) if missing else actions.edit(uid))
-        lay = _row_shell(self, "to_complete" if missing else "closed")
+        shown = e.get("_display") or work.display(e)[0]
+        missing = shown == model.INCOMPLETE
+        self.clicked.connect(lambda: actions.edit(uid))
+        lay = _row_shell(self, shown)
         client, company = work.name("client", e.get("clientUid")), work.name("company", e.get("companyUid"))
         parts = [company if client else "", (e.get("activity") or "").strip() or _("senza descrizione"),
-                 state_label(e)]
+                 display_label(shown)]
         box, self.title, self.sub = _texts(client or company or _("Senza cliente"),
                                            " · ".join(x for x in parts if x), not missing, False, missing)
         lay.addLayout(box, 1)
         t = work.totals(uid)
         extra = f"{KINDS[WORK]} {hm(t[WORK])}" + (f" · {KINDS[TRAVEL]} {hm(t[TRAVEL])}" if t[TRAVEL] else "")
         lay.addLayout(_side(_span(work, uid), extra, dots=W.TagDots(e.get("tags"), tags or {})))
-        if missing:
-            lay.addWidget(W.button(_("Completa…"), lambda: actions.complete(uid), "tonal"))
         menu = QMenu(self)
         menu.addAction(_("Modifica…"), lambda: actions.edit(uid))
         menu.addAction(_("Riapri"), lambda: actions.reopen_entry(uid))
@@ -537,7 +599,7 @@ def matches(work, obj, words):
     if not words:
         return True
     hay = " ".join(str(x) for x in (
-        obj.get("title"), obj.get("activity"), obj.get("notes"), obj.get("refs"), " ".join(obj.get("tags") or []),
+        obj.get("activity"), obj.get("notes"), " ".join(obj.get("tags") or []),
         work.name("client", obj.get("clientUid")), work.name("company", obj.get("companyUid")),
     ) if x).casefold()
     return all(w in hay for w in words)
@@ -716,14 +778,19 @@ class Home(QWidget):
         self.big_uid = None
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 18, 0, 0)
-        self.new = W.button(_("Nuova attività"), lambda: actions.new_entry(), "primary", "play",
-                            W.with_key(_("Nuova attività"), KEYS["new_entry"]))
-        self.new_todo = W.button(_("Nuovo Da fare"), lambda: actions.new_todo(), None, "add",
+        # the four ways to begin (§3): Da fare, Lavoro, Viaggio, Assenza
+        self.new_todo = W.button(_("Da fare"), lambda: actions.new_todo(), None, "add",
                                  W.with_key(_("Nuovo Da fare"), KEYS["new_todo"]))
+        self.new = W.button(KINDS[WORK], lambda: actions.new_entry(), "primary", "play",
+                            W.with_key(_("Nuova attività"), KEYS["new_entry"]))
+        self.new_travel = W.button(KINDS[TRAVEL], lambda: actions.new_entry(travel=True), None, "travel",
+                                   _("Nuovo viaggio"))
+        self.new_absence = W.button(KINDS[model.ABSENCE], lambda: actions.new_absence(), None, "dot",
+                                    _("Nuova assenza"))
         more = QMenu(self)
         self.full = more.addAction(_("Modulo completo…"), actions.full_entry)
         self.more = W.icon_button("more", _("Altro"), menu=more)
-        head = W.page(_("Home"), self.new_todo, self.new, self.more)
+        head = W.page(_("Home"), self.new_todo, self.new_travel, self.new_absence, self.new, self.more)
         head.setContentsMargins(24, 0, 24, 8)
         column = QWidget()
         column.setMaximumWidth(COLUMN)
@@ -766,6 +833,9 @@ class Home(QWidget):
         self.full.setEnabled(paired and policy.feature("entries"))
         self.new_todo.setEnabled(paired)
         self.new_todo.setVisible(policy.feature("todos"))
+        self.new_travel.setEnabled(paired and policy.feature("entries"))
+        self.new_travel.setVisible(policy.feature("travel"))
+        self.new_absence.setEnabled(paired)
         clear(self.cards)
         tags = theme.tag_colours(work)
         if not paired:
@@ -793,7 +863,7 @@ class Home(QWidget):
         tags = theme.tag_colours(work)
         f = self.filters.values()
         words = self.filters.words()
-        groups = self.actions.todos.home(f["show"], f["window"], f["company"], f["tag"])
+        groups = homelist.home(work, f["show"], f["window"], f["company"], f["tag"])
         shown = 0
         for section, items in groups:
             items = [it for it in items if matches(work, it[1], words)]

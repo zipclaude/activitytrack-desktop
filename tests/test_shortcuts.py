@@ -25,7 +25,7 @@ from PyQt6.QtWidgets import QApplication  # noqa: E402
 from activitytrack.pairing import Account  # noqa: E402
 from activitytrack.session import Session  # noqa: E402
 from activitytrack.work import (  # noqa: E402
-    ACTIVE, CLOSED, PAUSE, TO_COMPLETE, WORK, StartRequest,
+    CLOSED, PAUSE, WORK, StartRequest,
 )
 from activitytrack_desktop import hotkeys, shortcuts  # noqa: E402
 
@@ -233,7 +233,7 @@ class CommandsTest(unittest.TestCase):
     def test_pause_resume_and_stop(self):
         uid = self.actions.work.start(StartRequest(client="c1", activity="Rete"))
         self.commands.run("pause")
-        self.assertEqual((self.entry(uid)["status"], self.entry(uid)["mode"]), (ACTIVE, PAUSE))
+        self.assertEqual((self.entry(uid)["status"], self.entry(uid)["mode"]), ("RUNNING", PAUSE))
         self.assertIn("In pausa:", self.told[-1])
         self.assertTrue(self.changed)
         self.commands.run("pause")
@@ -248,25 +248,11 @@ class CommandsTest(unittest.TestCase):
         self.commands.run("stop")
         self.assertEqual(self.told[-1], "Nessuna attività in corso.")
 
-    def test_the_stop_sheet_in_front(self):
+    def test_a_stop_without_details_is_incomplete_not_a_sheet(self):
         uid = self.actions.work.start(StartRequest(client="c1"))
-        sheets = []
-
-        class Sheet:
-            def __init__(self, work, entry_uid, parent=None):
-                sheets.append(entry_uid)
-
-            def setWindowFlag(self, *a):
-                pass
-
-            show = raise_ = activateWindow = setWindowFlag
-
-            def exec(self):
-                return 0
-        with mock.patch("activitytrack_desktop.forms.StopDialog", Sheet):
-            self.commands.run("stop")
-        self.assertEqual(sheets, [uid])
-        self.assertEqual(self.entry(uid)["status"], TO_COMPLETE)
+        self.commands.run("stop")
+        self.assertEqual(self.entry(uid)["status"], CLOSED)
+        self.assertEqual(self.actions.work.display(self.entry(uid))[0], "DONE")
 
     def test_a_choice(self):
         a = self.actions.work.start(StartRequest(client="c1", activity="A"))
@@ -280,7 +266,7 @@ class CommandsTest(unittest.TestCase):
             self.commands.run("stop")
         self.assertEqual(sorted(asked[0]), sorted([a, b]))
         self.assertEqual(self.entry(a)["status"], CLOSED)
-        self.assertEqual(self.entry(b)["status"], ACTIVE)
+        self.assertEqual(self.entry(b)["mode"], WORK)
 
     def test_the_chooser(self):
         a = self.actions.work.start(StartRequest(client="c1", activity="A"))

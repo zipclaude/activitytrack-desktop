@@ -17,8 +17,8 @@ In:
   (as on the phone, within the policy);
 - editing activities: fields, times (when the policy allows), notes —
   descriptions from the PC tend to be long;
-- *To-dos*: list with the Home's filters, start, done, ignore, new,
-  postpone/plan;
+- *To-dos*: list with the Home's filters, start, done, delete (the bin), new,
+  postpone/plan; absences;
 - reminders as on the phone, each one switchable by the user;
 - offline work, synced when the network is back.
 
@@ -203,13 +203,13 @@ top and a scrolling column, at most 920 px wide.
   time, the totals, the running stretch's time, the tag dots, the round
   commands with their names under them. Then the **small cards** of the
   other activities running or suspended (one line, state, times, a round
-  resume or pause button). Without an activity the big card has Avvia and
-  Viaggio. Then the filters (period, state, company, tag as chips with
+  resume or pause button). Without an activity the big card has Da fare, Lavoro,
+  Viaggio and Assenza (the four ways to begin, docs/ACTIVITY-MODEL.md §3). Then the filters (period, state, company, tag as chips with
   menus; a search) and the list of to-dos and stopped activities in
-  sections (`todos.home`, as `web/homelist.py`), each row with its state
-  mark (overdue, planned, open, details missing, closed, done, ignored).
+  sections (`homelist.home`, as `web/homelist.py`), each row with the icon and colour of its displayed
+  state (`states.py`, one table: §2.2 of the activity model).
 - **Da fare** (`todos_ui.py`): every to-do in the same sections, the done
-  and the ignored on request, by company, with the search.
+  and the deleted on request, by company, with the search.
 - **Activity form**: every field the policy shows; segments when
   `editableTimes`; expenses later.
 - **To-do form**: title, notes, company/client, due date, plan (date,
@@ -243,14 +243,14 @@ web's `app.css`:
   (`icons.PATHS`), painted in any colour; the drop-down arrows are drawn
   into a temporary folder, as a style sheet takes them as files only.
 - The text never smaller than 10 pt (Material's body); the dialogs have
-  their name on top and, in the quick entry and the stop sheet, the
+  their name on top and, in the quick entry, the absence dialog and the detail, the
   fields' names above the fields, as the phone's screens.
 
 ### 6.5 Keys
 
 While the window has the focus (`QAction`s of the window, shown in the
 tooltips): Ctrl+N new activity (quick entry), Ctrl+P pause/resume, Ctrl+T
-stop (the stop sheet when details are missing), Ctrl+D new to-do, Ctrl+F the
+stop (the three choices of the return trip when they apply), Ctrl+D new to-do, Ctrl+F the
 search of the list shown, Ctrl+1/2/3 the sections, F5 sync; Ctrl+Enter
 confirms a form.
 

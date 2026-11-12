@@ -9,10 +9,10 @@ from PyQt6.QtCore import QSettings
 from PyQt6.QtGui import QActionGroup
 from PyQt6.QtWidgets import QHBoxLayout, QMenu, QVBoxLayout, QWidget
 
-from activitytrack import texts
+from activitytrack import homelist, texts
 from activitytrack.i18n import _
 from activitytrack.texts import FIELDS
-from activitytrack.todos import DONE, IGNORED, TODO, sections
+from activitytrack.homelist import DONE, IGNORED, TODO, sections
 
 from . import theme, widgets as W
 from .home import COLUMN, KEYS, TodoRow, clear, matches, scroll_page, search_field
@@ -103,14 +103,15 @@ class TodosPage(QWidget):
         return show
 
     def refresh_list(self):
-        todos = self.actions.todos
+        work = self.actions.work
         clear(self.list)
-        everything = todos.all() if todos.policy.feature("todos") else []
-        groups = sections(everything, [], self.shown(), 0, self.company, tz=todos.tz())
+        everything = homelist.all_todos(work) if work.policy.feature("todos") else []
+        groups = sections(everything, [], self.shown(), 0, self.company, tz=work.tz,
+                          planned=homelist.planned_of(work, everything))
         words = self.search.text().casefold().split()
         shown = 0
         for section, items in groups:
-            items = [it for it in items if matches(todos.work, it[1], words)]
+            items = [it for it in items if matches(work, it[1], words)]
             if not items:
                 continue
             self.list.addWidget(W.section_head(texts.SECTIONS[section], section == "overdue"))

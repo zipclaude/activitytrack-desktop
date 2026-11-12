@@ -17,8 +17,8 @@ from PyQt6.QtWidgets import (
 )
 
 from activitytrack.i18n import _
-from activitytrack.texts import state_label
-from activitytrack.work import PAUSE, STOP, TO_COMPLETE, WORK, WorkError
+from activitytrack.texts import display_label
+from activitytrack.work import PAUSE, WORK, WorkError
 
 from . import hotkeys
 from .targets import pause_target, resume_target, stop_target
@@ -156,7 +156,7 @@ class ChooseDialog(QDialog):
         self.list = QListWidget()
         for uid in uids:
             e = work.entry(uid)
-            item = QListWidgetItem(f"{work.label(e)} — {state_label(e)}")
+            item = QListWidgetItem(f"{work.label(e)} — {display_label(work.display(e)[0])}")
             item.setData(Qt.ItemDataRole.UserRole, uid)
             self.list.addItem(item)
         self.list.setCurrentRow(0)
@@ -244,11 +244,10 @@ class Commands(QObject):
         work = self.actions.work
         try:
             label = work.label(work.entry(uid))
-            work.command(uid, cmd)
         except WorkError as e:
             self.actions._fail(e)
             return
-        self.actions._done()
+        self.actions.command(uid, cmd)
         self._tell(said % label)
 
     def stop(self):
@@ -259,22 +258,14 @@ class Commands(QObject):
         uid = self._pick(target, _("Quale attività fermare?"))
         if uid is None:
             return
-        # the stop of the Actions, with the sheet in front
-        from . import forms
+        # the stop of the Actions: the return trip's three choices when they apply
         try:
             label = work.label(work.entry(uid))
-            status = work.command(uid, STOP)
         except WorkError as e:
             self.actions._fail(e)
             return
-        self.actions._done()
-        if status == TO_COMPLETE:
-            d = forms.StopDialog(work, uid)
-            front(d)
-            d.exec()
-            self.actions._done()
-        else:
-            self._tell(_("Fermata: %s") % label)
+        self.actions.do(uid, "stop")
+        self._tell(_("Fermata: %s") % label)
 
 
 # ---- Settings → Generale ----

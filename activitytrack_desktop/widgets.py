@@ -205,12 +205,10 @@ class Pill(QWidget):
         p.end()
 
 
-def state_icon(entry):
-    """The icon of a state, the command's that leads to it."""
-    from activitytrack.work import ACTIVE, PAUSE, SUSPENDED, TRAVEL
-    if entry.get("status") == ACTIVE:
-        return {PAUSE: "pause", TRAVEL: "travel"}.get(entry.get("mode"), "play")
-    return "suspend" if entry.get("status") == SUSPENDED else "stop"
+def state_icon(state):
+    """The icon of a displayed state (states.py)."""
+    from . import states
+    return states.icon(state)
 
 
 class Tag(QWidget):
@@ -239,56 +237,33 @@ class Tag(QWidget):
         p.end()
 
 
-# the Home list's marks (HomeList.kt, the web's .mark): overdue, planned, open, done, ignored; to complete, closed
-MARKS = ("overdue", "planned", "open", "done", "ignored", "to_complete", "closed")
-
-
 class Mark(QWidget):
-    """The state of a row of the Home list, at its start."""
+    """The displayed state of a row of the Home list, at its start: its icon on its colour (states.py)."""
 
-    def __init__(self, kind, parent=None):
+    def __init__(self, state, parent=None):
         super().__init__(parent)
-        self.kind = kind
+        self.state = state
         self.setFixedSize(30, 30)
 
     def paintEvent(self, ev):
+        from . import states
         t = theme.tokens()
-        k = self.kind
-        fill, ink = {
-            "overdue": (t.err_bg, t.danger), "planned": (t.secondary_c, t.on_secondary_c),
-            "to_complete": (t.warn_bg, t.text), "done": (t.surface3, t.muted), "ignored": (t.surface3, t.muted),
-            "closed": (t.surface3, t.muted),
-        }.get(k, (None, t.muted))
+        colour = states.colour(self.state)
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         r = QRectF(self.rect()).adjusted(1, 1, -1, -1)
-        if fill:
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor(fill))
-        else:
+        if QColor(colour) == QColor(theme.WHITE):
+            # a to-do: an empty ring, the check box inside
             p.setPen(QPen(QColor(t.line), 1))
             p.setBrush(Qt.BrushStyle.NoBrush)
+            ink = t.muted
+        else:
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(colour))
+            ink = theme.on_colour(colour)
         p.drawEllipse(r)
         c = r.center()
-        glyph = {"planned": "clock", "done": "done", "to_complete": "edit"}.get(k)
-        if glyph:
-            icons.paint(p, glyph, QRectF(c.x() - 8, c.y() - 8, 16, 16), ink)
-        elif k == "overdue":
-            p.setPen(QColor(ink))
-            f = theme.font("title", QFont.Weight.Bold)
-            p.setFont(f)
-            p.drawText(r, Qt.AlignmentFlag.AlignCenter, "!")
-        elif k == "ignored":
-            p.setPen(QPen(QColor(ink), 2, cap=Qt.PenCapStyle.RoundCap))
-            p.drawLine(QPointF(c.x() - 5, c.y()), QPointF(c.x() + 5, c.y()))
-        elif k == "closed":
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor(ink))
-            p.drawRoundedRect(QRectF(c.x() - 5, c.y() - 5, 10, 10), 2, 2)
-        else:
-            p.setPen(QPen(QColor(ink), 1.6))
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawEllipse(c, 4.5, 4.5)
+        icons.paint(p, states.icon(self.state), QRectF(c.x() - 8, c.y() - 8, 16, 16), QColor(ink))
         p.end()
 
 
