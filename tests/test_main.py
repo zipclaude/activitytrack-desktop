@@ -159,3 +159,48 @@ class CommandLineTest(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertEqual(r.stdout.split("\n")[:2], ["ready", "ran stop None"])
             self.assertNotIn("Traceback", r.stderr)
+
+
+# the language is set before any module that translates its texts when imported (the library's texts, the Home…)
+LANGUAGE_FIRST = """
+import sys
+from PyQt6.QtCore import QTimer
+from PyQt6.QtWidgets import QApplication
+import activitytrack_desktop.main as M
+import activitytrack_desktop.service as S
+M.QSystemTrayIcon.isSystemTrayAvailable = staticmethod(lambda: False)
+M.QMessageBox.information = staticmethod(lambda *a, **k: None)
+S.SyncService.sync = lambda self, full=False: None
+language = M._language
+
+
+def before(app, forced=None):
+    print("early", sorted(m for m in sys.modules if m in ("activitytrack.texts", "activitytrack_desktop.home")),
+          flush=True)
+    return language(app, forced)
+M._language = before
+start = S.SyncService.start
+
+
+def started(self):
+    start(self)
+    from activitytrack import texts
+    print("kind", texts.KINDS["WORK"], flush=True)
+    QTimer.singleShot(0, QApplication.quit)
+S.SyncService.start = started
+sys.exit(M.main(["--data", sys.argv[1]]))
+"""
+
+
+class LanguageTest(unittest.TestCase):
+    def test_the_texts_are_translated_in_the_language_of_the_system(self):
+        with tempfile.TemporaryDirectory() as d:
+            env = dict(os.environ, HOME=d, QT_QPA_PLATFORM="offscreen", XDG_CONFIG_HOME=d, LC_ALL="en_US.UTF-8",
+                       LANG="en_US.UTF-8", LANGUAGE="en", PYTHONPATH=os.pathsep.join(
+                           [str(Path(main.__file__).parent.parent), *sys.path]))
+            r = subprocess.run([sys.executable, "-c", LANGUAGE_FIRST, str(Path(d) / "data")], env=env,
+                               capture_output=True, text=True, timeout=60)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("early []", r.stdout)
+            kind = [line for line in r.stdout.splitlines() if line.startswith("kind ")]
+            self.assertEqual(kind, ["kind Work"], r.stdout)

@@ -17,6 +17,7 @@ from activitytrack.i18n import _, add_catalogs, set_language
 from activitytrack.paths import data_dir
 
 from . import __version__
+from .zone import system_zone
 
 APP_ID = "activitytrack-desktop"
 
@@ -185,10 +186,9 @@ def main(argv=None):
 
     from activitytrack.policy import stored
     from activitytrack.session import Session
-    from .home import _zone
 
     # Qt's zone: the system's IANA one on Windows too, for the store's migration to the activity model
-    session = Session(folder, allow_http=args.dev, zone=_zone())
+    session = Session(folder, allow_http=args.dev, zone=system_zone())
     _language(app, stored(session.store).language)
     from activitytrack import formats
     formats.load(session.store)

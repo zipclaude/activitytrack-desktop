@@ -24,6 +24,7 @@ from activitytrack.texts import KINDS, FIELDS, clock, display_label, entry_actio
 from activitytrack.work import PAUSE, TRAVEL, WORK, StartRequest, Work, WorkError
 
 from . import forms, icons, states, targets, theme, widgets as W
+from .zone import system_zone as _zone
 
 # the round buttons of the commands: icon and colour (CommandButtons.kt); a command is its kind, or "stop"
 COMMAND_LOOK = {WORK: ("play", theme.GREEN), PAUSE: ("pause", theme.YELLOW), TRAVEL: ("travel", theme.BLUE),
@@ -276,12 +277,6 @@ class Actions(QObject):
             return
         if ok:
             self._done()
-
-
-def _zone():
-    from PyQt6.QtCore import QTimeZone
-    z = bytes(QTimeZone.systemTimeZoneId()).decode()
-    return z or None
 
 
 def _time(ms):
