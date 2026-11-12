@@ -583,7 +583,8 @@ class EntryRow(W.Surface):
         lay.addLayout(_side(_span(work, uid), extra, dots=W.TagDots(e.get("tags"), tags or {})))
         menu = QMenu(self)
         menu.addAction(_("Modifica…"), lambda: actions.edit(uid))
-        menu.addAction(_("Riapri"), lambda: actions.reopen_entry(uid))
+        if e.get("kind") != model.ABSENCE:
+            menu.addAction(_("Riapri"), lambda: actions.reopen_entry(uid))
         self.more = W.icon_button("more", _("Altro"), menu=menu)
         lay.addWidget(self.more)
 

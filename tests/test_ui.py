@@ -363,6 +363,27 @@ class UiTest(unittest.TestCase):
         self.assertEqual((a["absenceKind"], a["companyUid"]), ("LEAVE", None))
         self.assertEqual(actions.work.display(a)[0], "ABSENCE")
 
+    def test_an_absence_row_cannot_be_reopened(self):
+        from datetime import date
+
+        from PyQt6.QtWidgets import QMenu
+
+        from activitytrack.work import StartRequest
+        from activitytrack_desktop.home import Actions, EntryRow
+        self.pair()
+        actions = Actions(self.session)
+        work = actions.work
+        absence = work.add_absence(date(2026, 11, 16), absence_kind="LEAVE", start_min=540, end_min=600)
+        done = work.start(StartRequest(client="c1", activity="Rete"))
+        work.perform(done, "stop")
+
+        def verbs(uid):
+            row = EntryRow(actions, work.entry(uid), 0)
+            (menu,) = row.findChildren(QMenu)
+            return [a.text() for a in menu.actions()]
+        self.assertEqual(verbs(done), ["Modifica…", "Riapri"])
+        self.assertEqual(verbs(absence), ["Modifica…"])
+
     def test_the_theme_follows_the_system(self):
         from activitytrack_desktop import theme
         app = QApplication.instance()
