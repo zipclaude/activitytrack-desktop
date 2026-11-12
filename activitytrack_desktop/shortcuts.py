@@ -247,8 +247,8 @@ class Commands(QObject):
         except WorkError as e:
             self.actions._fail(e)
             return
-        self.actions.command(uid, cmd)
-        self._tell(said % label)
+        if self.actions.command(uid, cmd):
+            self._tell(said % label)
 
     def stop(self):
         work = self.actions.work
@@ -264,8 +264,8 @@ class Commands(QObject):
         except WorkError as e:
             self.actions._fail(e)
             return
-        self.actions.do(uid, "stop")
-        self._tell(_("Fermata: %s") % label)
+        if self.actions.do(uid, "stop"):
+            self._tell(_("Fermata: %s") % label)
 
 
 # ---- Settings → Generale ----

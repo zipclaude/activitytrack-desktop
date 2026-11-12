@@ -248,6 +248,22 @@ class CommandsTest(unittest.TestCase):
         self.commands.run("stop")
         self.assertEqual(self.told[-1], "Nessuna attività in corso.")
 
+    def test_no_notice_for_a_command_cancelled_or_failed(self):
+        from activitytrack_desktop import home
+        from activitytrack.work import WorkError
+        uid = self.actions.work.start(StartRequest(client="c1", activity="Rete"))
+        # the stop sheet cancelled
+        with mock.patch.object(home.forms, "stop", return_value=False):
+            self.commands.run("stop")
+        self.assertEqual(self.entry(uid)["status"], "RUNNING")
+        self.assertEqual(self.told, [])
+        # a refusal of the library
+        with mock.patch.object(self.actions.work, "perform", side_effect=WorkError("illegal")), \
+                mock.patch.object(home.QMessageBox, "warning") as warning:
+            self.commands.run("pause")
+        warning.assert_called_once()
+        self.assertEqual(self.told, [])
+
     def test_a_stop_without_details_is_incomplete_not_a_sheet(self):
         uid = self.actions.work.start(StartRequest(client="c1"))
         self.commands.run("stop")

@@ -114,31 +114,33 @@ class Actions(QObject):
         return ok == QMessageBox.StandardButton.Yes
 
     def do(self, uid, verb, kind=None, at=None):
-        """One command by name (Work.perform), with the questions of §3: stop, travel from work, reopen, delete."""
+        """One command by name (Work.perform), with the questions of §3: stop, travel from work, reopen, delete.
+        True when it was done, False when cancelled or failed."""
         self.refresh_policy()
         try:
             if verb == "stop":
                 if not forms.stop(self.work, uid, self._parent(), at):
-                    return
+                    return False
             elif verb == "travel_from_work":
                 answer = QMessageBox.question(
                     self._parent(), KINDS[TRAVEL], _("Hai completato l'attività lavorativa?"),
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
                     | QMessageBox.StandardButton.Cancel)
                 if answer == QMessageBox.StandardButton.Cancel:
-                    return
+                    return False
                 self.work.travel_from_work(uid, answer == QMessageBox.StandardButton.Yes, at)
             elif verb == "reopen" and not self._ask(_("Riapri"), _("Riaprire l'attività?")):
-                return
+                return False
             elif verb == "delete" and not self._ask(
                     _("Elimina"), _("Eliminare? Si elimina anche sugli altri dispositivi; si può ripristinare.")):
-                return
+                return False
             else:
                 self.work.perform(uid, verb, kind, at)
         except WorkError as e:
             self._fail(e)
-            return
+            return False
         self._done()
+        return True
 
     def act(self, uid, action):
         """A button of texts.entry_actions."""
@@ -147,17 +149,15 @@ class Actions(QObject):
     def command(self, uid, kind):
         """The pause and resume keys and menus: PAUSE pauses, WORK resumes a pause or a suspended activity."""
         if kind == PAUSE:
-            self.do(uid, "switch", PAUSE)
-        else:
-            self.resume(uid)
+            return self.do(uid, "switch", PAUSE)
+        return self.resume(uid)
 
     def resume(self, uid, at=None):
         """Riprendi: the kind open before a pause; from a suspended activity, work."""
         seg = self.work.open_segment(uid)
         if seg is None:
-            self.do(uid, "resume", WORK, at)
-        else:
-            self.do(uid, "switch", self.work.resume_kind(uid), at)
+            return self.do(uid, "resume", WORK, at)
+        return self.do(uid, "switch", self.work.resume_kind(uid), at)
 
     def _pick(self, target, title):
         """The uid of a target (targets.py); a list is the user's choice in a small list."""
