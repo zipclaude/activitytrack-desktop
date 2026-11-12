@@ -245,7 +245,6 @@ class Actions(QObject):
         if ok:
             self._done()
 
-
     def new_absence(self, first=None):
         if self.session.account is None:
             return
