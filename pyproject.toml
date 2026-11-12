@@ -23,4 +23,4 @@ packages = ["activitytrack_desktop"]
 activitytrack_desktop = ["locale/*.json"]
 
 [tool.setuptools.dynamic]
-version = { attr = "activitytrack_desktop.__version__" }
+version = { attr = "activitytrack_desktop.__pep440__" }
