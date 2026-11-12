@@ -21,7 +21,7 @@ from activitytrack.policy import stored
 from activitytrack import homelist, model
 from activitytrack.homelist import DEFAULT_SHOW, SHOWS, WINDOWS
 from activitytrack.texts import KINDS, FIELDS, clock, display_label, entry_actions, error_text, hm
-from activitytrack.work import PAUSE, TRAVEL, WORK, Work, WorkError
+from activitytrack.work import PAUSE, TRAVEL, WORK, StartRequest, Work, WorkError
 
 from . import forms, icons, states, targets, theme, widgets as W
 
@@ -74,13 +74,11 @@ class Actions(QObject):
         QMessageBox.warning(self._parent(), "ActivityTrack", error_text(e) if isinstance(e, WorkError) else str(e))
         self.changed.emit()
 
-    def new_entry(self, todo=None, travel=False):
+    def new_entry(self, todo=None):
         if self.session.account is None:
             return
         self.refresh_policy()
         d = forms.QuickEntry(self.work, self._parent(), todo=todo)
-        if travel and self.work.policy.feature("travel"):
-            d.options.travel_mode.setChecked(True)
         # from the tray: in front of what the user was doing
         d.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
         d.show()
@@ -88,6 +86,22 @@ class Actions(QObject):
         d.activateWindow()
         if d.exec():
             self._done()
+
+    def new_travel(self):
+        """Viaggio: an anonymous activity travelling at once, no dialog; from work the question of §3.2."""
+        if self.session.account is None:
+            return
+        self.refresh_policy()
+        try:
+            front = next(iter(targets.running(self.work)), None)
+            if front is not None and self.work.asks_completion(front):
+                self.do(front, "travel_from_work")
+                return
+            self.work.start(StartRequest(mode=TRAVEL))
+        except WorkError as e:
+            self._fail(e)
+            return
+        self._done()
 
     def full_entry(self):
         self.refresh_policy()
@@ -402,7 +416,7 @@ class EmptyCard(W.Surface):
         self.start.button.setEnabled(allowed)
         row.addWidget(self.start)
         if work.policy.feature("travel"):
-            self.travel = W.Command(KINDS[TRAVEL], "travel", theme.BLUE, lambda: actions.new_entry(travel=True), 64,
+            self.travel = W.Command(KINDS[TRAVEL], "travel", theme.BLUE, lambda: actions.new_travel(), 64,
                                     _("Nuovo viaggio"))
             self.travel.button.setEnabled(allowed)
             row.addWidget(self.travel)
@@ -782,7 +796,7 @@ class Home(QWidget):
                                  W.with_key(_("Nuovo Da fare"), KEYS["new_todo"]))
         self.new = W.button(KINDS[WORK], lambda: actions.new_entry(), "primary", "play",
                             W.with_key(_("Nuova attività"), KEYS["new_entry"]))
-        self.new_travel = W.button(KINDS[TRAVEL], lambda: actions.new_entry(travel=True), None, "travel",
+        self.new_travel = W.button(KINDS[TRAVEL], lambda: actions.new_travel(), None, "travel",
                                    _("Nuovo viaggio"))
         self.new_absence = W.button(KINDS[model.ABSENCE], lambda: actions.new_absence(), None, "dot",
                                     _("Nuova assenza"))

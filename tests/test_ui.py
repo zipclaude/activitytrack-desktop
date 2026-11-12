@@ -326,6 +326,27 @@ class UiTest(unittest.TestCase):
         self.assertEqual(w.entry(uid)["status"], "CLOSED")
         self.assertEqual([s["kind"] for s in w.segments(uid)], [TRAVEL, WORK, TRAVEL])
 
+    def test_travel_starts_at_once_and_asks_only_from_work(self):
+        from activitytrack.work import StartRequest, TRAVEL, WORK
+        from activitytrack_desktop import home
+        self.pair()
+        actions = home.Actions(self.session)
+        w = actions.work
+        actions.new_travel()
+        (uid,) = [e["uid"] for e in w.running()]
+        self.assertEqual(w.open_segment(uid)["kind"], TRAVEL)
+        w.stop(uid)
+        self.session.store.pulled({"type": "client", "uid": "c1", "rev": 1,
+                                   "fields": {"name": "B", "archived": False}})
+        uid = w.start(StartRequest(client="c1", activity="x", mode=WORK))
+        yes = home.QMessageBox.StandardButton.Yes
+        with mock.patch.object(home.QMessageBox, "question", return_value=yes) as ask:
+            actions.new_travel()
+        ask.assert_called_once()
+        self.assertEqual(w.entry(uid)["status"], "CLOSED")
+        (new,) = [e["uid"] for e in w.running()]
+        self.assertEqual(w.open_segment(new)["kind"], TRAVEL)
+
     def test_an_absence_from_the_dialog(self):
         from datetime import date
 
