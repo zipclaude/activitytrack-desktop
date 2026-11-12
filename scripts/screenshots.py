@@ -41,17 +41,22 @@ def sample(store, now):
     put("preset", "p1", {"text": "Assistenza remota", "position": 1})
     for dow in range(1, 6):
         put("workSchedule", f"w{dow}", {"dayOfWeek": dow, "startMin": 540, "endMin": 1080})
+
+
+def todos(work, now):
+    """The sample TODO activities; returns the uid of the one whose dialog is shown."""
     today = date.fromtimestamp(now / 1000)
-    put("todo", "t1", {"title": "Rinnovo certificati", "clientUid": "hotel", "companyUid": "acme", "done": False,
-                       "planDate": (today - timedelta(days=2)).isoformat(), "planStartMin": 840, "durationMin": 60,
-                       "priority": 1, "refs": "INC0012345"})
     # an hour from now, so that it is "today" whenever the script runs
     soon = min((datetime.fromtimestamp(now / 1000).hour + 1) * 60, 22 * 60)
-    put("todo", "t2", {"title": "Backup del server", "clientUid": "tax", "companyUid": "muni", "done": False,
-                       "planDate": today.isoformat(), "planStartMin": soon, "durationMin": 90, "refs": ""})
-    put("todo", "t3", {"title": "Inventario hardware", "clientUid": "wine", "companyUid": "acme", "done": False,
-                       "dueDate": (today + timedelta(days=3)).isoformat(), "refs": ""})
-    put("todo", "t4", {"title": "Preventivo stampanti", "done": False, "refs": ""})
+    work.save_todo(None, "Rinnovo certificati", client="hotel", company="acme",
+                   plan_date=today - timedelta(days=2), plan_min=840, duration_min=60,
+                   priority=1, refs="INC0012345")
+    backup = work.save_todo(None, "Backup del server", client="tax", company="muni",
+                            plan_date=today, plan_min=soon, duration_min=90)
+    work.save_todo(None, "Inventario hardware", client="wine", company="acme",
+                   due_date=today + timedelta(days=3))
+    work.save_todo(None, "Preventivo stampanti")
+    return backup
 
 
 def main():
@@ -77,7 +82,7 @@ def main():
     from activitytrack_desktop.service import SyncService
     from activitytrack.session import Session
     from activitytrack_desktop.ui import MainWindow, PairDialog
-    from activitytrack.work import PAUSE, TRAVEL, StartRequest
+    from activitytrack.work import PAUSE, TRAVEL, WORK, StartRequest
 
     theme.install(app, dark=dark)
     # the dark set: the Home, the Da fare and the quick entry, with "-dark" in the name
@@ -109,15 +114,16 @@ def main():
     service.sync = lambda full=False: None
     actions = Actions(session)
     w = actions.work
+    todo_uid = todos(w, now)
     b = w.start(StartRequest(client="hotel", activity="Aggiornamento firewall", start_ms=now - 300 * MIN,
                              end_ms=now - 240 * MIN))
     c = w.start(StartRequest(client="tax", activity="", start_ms=now - 200 * MIN, end_ms=now - 140 * MIN))
     d = w.start(StartRequest(client="wine", activity="Installazione stampanti", start_ms=now - 130 * MIN))
-    w.command(d, "SUSPEND", at=now - 100 * MIN)
+    w.suspend(d, at=now - 100 * MIN)
     a = w.start(StartRequest(client="lib", activity="Configurazione rete Wi-Fi della sala lettura",
                              tags=["urgente", "rete"], start_ms=now - 95 * MIN))
-    w.command(a, TRAVEL, at=now - 70 * MIN)
-    w.command(a, "WORK", at=now - 52 * MIN)
+    w.switch(a, TRAVEL, at=now - 70 * MIN)
+    w.switch(a, WORK, at=now - 52 * MIN)
     del b, c
     notifier = Notifier(use_dbus=False)
     win = MainWindow(session, service, actions, notifier)
@@ -148,12 +154,7 @@ def main():
     e.resize(660, 760)
     e.show()
     save(e, "entry")
-    stopped = [x for x in w.entries() if x.get("status") == "TO_COMPLETE"][0]
-    s = forms.StopDialog(w, stopped["uid"])
-    s.resize(540, 280)
-    s.show()
-    save(s, "stop")
-    t = forms.TodoDialog(actions.todos, uid="t2")
+    t = forms.TodoDialog(w, uid=todo_uid)
     t.resize(640, 560)
     t.show()
     save(t, "todo")
