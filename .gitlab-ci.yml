@@ -57,7 +57,7 @@ windows:
   rules:
     - if: $TESTVM || $CI_COMMIT_BRANCH =~ /^testvm\//
       when: never
-    - if: $CI_COMMIT_TAG =~ /^v[0-9]/
+    - if: $CI_COMMIT_TAG =~ /^v[0-9]+(\.[0-9]+)*$/
   variables:
     QT_QPA_PLATFORM: offscreen
   script:
@@ -162,7 +162,7 @@ windows-installer:
   rules:
     - if: $TESTVM || $CI_COMMIT_BRANCH =~ /^testvm\//
       when: never
-    - if: $CI_COMMIT_TAG =~ /^v[0-9]/
+    - if: $CI_COMMIT_TAG =~ /^v[0-9]+(\.[0-9]+)*$/
   timeout: 40m
   script:
     - choco install python313 --no-progress -y
@@ -232,7 +232,9 @@ release:
     - R="${PV##*-}"
     - LIB=$(cat .gitlab/lib-ref)
     # "~" of the package versions is not allowed in a package file's name: "-" instead
-    - mkdir artifacts && cp dist/*.deb dist/*.tar.gz dist/*.exe artifacts/
+    # the Windows installer is built for stable tags only (pre-releases go without the paid Windows runner)
+    - mkdir artifacts && cp dist/*.deb dist/*.tar.gz artifacts/
+    - if ls dist/*.exe >/dev/null 2>&1; then cp dist/*.exe artifacts/; fi
     - cd artifacts
     - for f in activitytrack-desktop_*~*_all.deb; do mv "$f" "$(echo "$f" | tr '~' '-')"; done
     - sha256sum * > SHA256SUMS && cat SHA256SUMS
@@ -250,7 +252,7 @@ release:
         echo
         echo "- Debian 13 / 14, Ubuntu 24.04 / 26.04: \`apt install ./python3-activitytrack_*-<distro>_all.deb ./activitytrack-desktop_${V}-${R}-<distro>_all.deb\` (deb13, deb14, ubuntu24.04, ubuntu26.04); the library [python3-activitytrack]($LIB_URL/-/releases/$LIB) is in its own release"
         echo "- Other distributions: \`activitytrack-desktop-$V.tar.gz\`, see [README]($CI_PROJECT_URL/-/blob/v$V/README.md)"
-        echo "- Windows 10 / 11: \`ActivityTrackDesktop-$V-setup.exe\`, installed for the current user. It is not signed: Windows SmartScreen warns at the first run (More info → Run anyway); check the file against SHA256SUMS."
+        ls artifacts/*.exe >/dev/null 2>&1 && echo "- Windows 10 / 11: \`ActivityTrackDesktop-$V-setup.exe\`, installed for the current user. It is not signed: Windows SmartScreen warns at the first run (More info → Run anyway); check the file against SHA256SUMS."
         echo
         echo "Manual (it, en): in the documentation release, https://gitlab.com/activitytrack/activitytrack-doc/-/releases/v$V, and in the package \`activitytrack-doc\`."
       } > notes.md
