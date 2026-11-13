@@ -12,7 +12,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import QSettings, Qt  # noqa: E402
 from PyQt6.QtGui import QColor, QPalette  # noqa: E402
-from PyQt6.QtWidgets import QApplication, QDialogButtonBox, QToolButton  # noqa: E402
+from PyQt6.QtWidgets import QApplication, QDialogButtonBox, QLabel, QToolButton  # noqa: E402
 
 from activitytrack import wire  # noqa: E402
 from activitytrack.texts import sync_needs_attention as needs_attention, sync_state as state_text  # noqa: E402
@@ -400,6 +400,23 @@ class UiTest(unittest.TestCase):
             return [a.text() for a in menu.actions()]
         self.assertEqual(verbs(done), ["Modifica…", "Riapri"])
         self.assertEqual(verbs(absence), ["Modifica…"])
+
+    def test_an_absence_row_shows_its_kind_company_notes_and_time(self):
+        from datetime import date
+
+        from activitytrack_desktop.home import Actions, EntryRow
+        self.pair()
+        actions = Actions(self.session)
+        work = actions.work
+        work.store.pulled({"type": "company", "uid": "co", "rev": 1, "fields": {"name": "Alfa"}})
+        uid = work.add_absence(date(2026, 11, 16), absence_kind="HOLIDAY", company="co", start_min=540, end_min=630,
+                               notes="Mare")
+        row = EntryRow(actions, work.entry(uid), 0)
+        self.assertEqual(row.title.text(), "Ferie")
+        self.assertEqual(row.sub.text(), "Alfa · Mare")
+        labels = [w.text() for w in row.findChildren(QLabel)]
+        self.assertIn("Assenza 1:30", labels)
+        self.assertFalse([t for t in labels if "Lavoro" in t or "senza descrizione" in t])
 
     def test_the_theme_follows_the_system(self):
         from activitytrack_desktop import theme

@@ -583,13 +583,19 @@ class EntryRow(W.Surface):
         self.clicked.connect(lambda: actions.edit(uid))
         lay = _row_shell(self, shown)
         client, company = work.name("client", e.get("clientUid")), work.name("company", e.get("companyUid"))
-        parts = [company if client else "", (e.get("activity") or "").strip() or _("senza descrizione"),
-                 display_label(shown)]
-        box, self.title, self.sub = _texts(client or company or _("Senza cliente"),
-                                           " · ".join(x for x in parts if x), not missing, False, missing)
-        lay.addLayout(box, 1)
         t = work.totals(uid)
-        extra = f"{KINDS[WORK]} {hm(t[WORK])}" + (f" · {KINDS[TRAVEL]} {hm(t[TRAVEL])}" if t[TRAVEL] else "")
+        if e.get("kind") == model.ABSENCE:
+            # an absence: its kind ("Ferie"), then the company and the notes, and the time of its absence segments
+            title = texts.ABSENCE_KINDS.get(e.get("absenceKind") or model.ABSENCE, "") or KINDS[model.ABSENCE]
+            sub = " · ".join(x for x in (company, (e.get("notes") or "").strip()) if x)
+            extra = f"{KINDS[model.ABSENCE]} {hm(t[model.ABSENCE])}"
+        else:
+            parts = [company if client else "", (e.get("activity") or "").strip() or _("senza descrizione"),
+                     display_label(shown)]
+            title, sub = client or company or _("Senza cliente"), " · ".join(x for x in parts if x)
+            extra = f"{KINDS[WORK]} {hm(t[WORK])}" + (f" · {KINDS[TRAVEL]} {hm(t[TRAVEL])}" if t[TRAVEL] else "")
+        box, self.title, self.sub = _texts(title, sub, not missing, False, missing)
+        lay.addLayout(box, 1)
         lay.addLayout(_side(_span(work, uid), extra, dots=W.TagDots(e.get("tags"), tags or {})))
         menu = QMenu(self)
         menu.addAction(_("Modifica…"), lambda: actions.edit(uid))
