@@ -11,7 +11,7 @@ Package: activitytrack-desktop
 Architecture: all
 Depends: ${misc:Depends},
  python3 (>= 3.11),
- python3-activitytrack (>= 1.0.0~alfa-1),
+ python3-activitytrack (>= 1.0.0~alfa-2),
  python3-jeepney,
  python3-pyqt6,
  python3-xlib,
