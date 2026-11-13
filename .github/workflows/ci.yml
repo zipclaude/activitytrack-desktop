@@ -1,0 +1,311 @@
+# CI of activitytrack-desktop on GitHub, the backup of the GitLab project: it does what .gitlab-ci.yml does
+# (keep the two in step, see CLAUDE.md). Nothing starts on its own (not on pushes to branches or tags, no pull
+# requests): start it by hand ("Run workflow" on a branch or tag), or push a branch ghtest/* (the
+# equivalent of GitLab's testvm/*: a workflow not yet on the default branch cannot be dispatched).
+# Started on a branch it tests and builds the Debian/Ubuntu packages and the tarball, and publishes
+# nothing; started on a tag vX.Y.Z it also builds the Windows installer, tries everything and publishes
+# the release (a tag with a suffix is a pre-release, without the Windows jobs). The library is
+# python3-activitytrack at the tag in .gitlab/lib-ref, cloned from GitHub: the backup does not depend on GitLab.
+#
+# GitLab only, not ported: the job testvm (it runs on the owner's test VM, in an image that exists only there;
+# here every run is the full one), and the merge request pipelines (GitHub has no merge requests into next).
+name: CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["ghtest/**"]
+
+permissions:
+  contents: read
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+  LIB_URL: https://github.com/zipclaude/python3-activitytrack
+
+jobs:
+  # the Windows jobs run only on a stable tag vX.Y.Z (GitLab: the shared Windows runners are paid; here
+  # they are not, but a pre-release goes without them as in GitLab)
+  stable:
+    runs-on: ubuntu-latest
+    outputs:
+      stable: ${{ steps.tag.outputs.stable }}
+    steps:
+      - id: tag
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ] && echo "$GITHUB_REF_NAME" | grep -Eq '^v[0-9]+(\.[0-9]+)*$'; then
+            echo "stable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "stable=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  linux:
+    # on Linux the desktop runs on the distribution's packages only (docs/DESIGN.md §4):
+    # the oldest and the newest Qt of the targets
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["debian:trixie", "debian:forky", "ubuntu:24.04"]
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - name: Distribution packages
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates python3 python3-pyqt6 python3-cryptography python3-keyring flake8 libegl1 dbus
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: The library (python3-activitytrack at .gitlab/lib-ref)
+        run: |
+          git clone --depth 1 -b "$(cat .gitlab/lib-ref)" "$LIB_URL" lib
+          echo "PYTHONPATH=$PWD/lib" >> "$GITHUB_ENV"
+      - name: Lint
+        run: flake8 activitytrack_desktop tests
+      - name: Tests
+        # a session bus for the notifications' test
+        run: dbus-run-session -- python3 -m unittest discover -s tests -t . -v
+
+  windows:
+    needs: stable
+    if: needs.stable.outputs.stable == 'true'
+    runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      # the libraries the installer bundles (requirements-windows.txt)
+      - name: Libraries
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-windows.txt
+          $lib = (Get-Content .gitlab/lib-ref).Trim()
+          python -m pip install "git+$env:LIB_URL@$lib"
+      - name: Tests
+        shell: pwsh
+        run: python -m unittest discover -s tests -t . -v
+
+  # the packages are built on a tag and on every other run (by hand or on ghtest/*); they wait for the
+  # test jobs, as a GitLab stage does ("windows" is skipped on a branch: that is not a failure)
+  deb:
+    needs: [linux, windows]
+    if: ${{ !cancelled() && !failure() }}
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { image: "debian:trixie", suffix: deb13 }
+          - { image: "debian:forky", suffix: deb14 }
+          - { image: "ubuntu:24.04", suffix: ubuntu24.04 }
+          - { image: "ubuntu:26.04", suffix: ubuntu26.04 }
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - name: Build tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates git build-essential debhelper dpkg-dev devscripts equivs desktop-file-utils appstream
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Version
+        env:
+          SUFFIX: ${{ matrix.suffix }}
+        run: |
+          V=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' activitytrack_desktop/__init__.py)
+          # a release is built on a released library
+          if [ "$GITHUB_REF_TYPE" = tag ]; then test "v$V" = "$GITHUB_REF_NAME"; grep -q "^v" .gitlab/lib-ref; fi
+          # Debian: a beta 1.1.0-beta.1 is 1.1.0~beta.1 (sorts before 1.1.0); only the first "-"
+          DV=$(echo "$V" | sed 's/-/~/')
+          # the package: that version and a Debian revision, 1.1.0~beta.1-1
+          PV=$(dpkg-parsechangelog -S Version)
+          test "$(dpkg-parsechangelog -S Source)" = activitytrack-desktop && test "${PV%-*}" = "$DV" && test "$PV" != "$DV"
+          grep -q "<release version=\"$DV\"" packaging/it.infraconsulting.activitytrack_desktop.metainfo.xml
+          # the distribution goes in the revision: 1.1.0~beta.1-1~deb13 still satisfies (>= 1.1.0~beta.1)
+          sed -i "1s/($PV)/($PV~$SUFFIX)/" debian/changelog
+          head -1 debian/changelog
+      - name: Desktop entry and AppStream
+        run: |
+          desktop-file-validate packaging/activitytrack-desktop.desktop
+          appstreamcli validate --no-net --pedantic packaging/it.infraconsulting.activitytrack_desktop.metainfo.xml || appstreamcli validate --no-net packaging/it.infraconsulting.activitytrack_desktop.metainfo.xml
+      - name: The library's package (python3-activitytrack at .gitlab/lib-ref)
+        env:
+          SUFFIX: ${{ matrix.suffix }}
+        run: |
+          git clone --depth 1 -b "$(cat .gitlab/lib-ref)" "$LIB_URL" /tmp/lib
+          cd /tmp/lib
+          # versioned as in its release (1.1.0~beta.1-1~deb13): the Depends are tried on that
+          sed -i "1s/(\([^)]*\))/(\1~$SUFFIX)/" debian/changelog
+          mk-build-deps -i -r -t "apt-get -y --no-install-recommends" debian/control
+          dpkg-buildpackage -b -us -uc
+          apt-get install -y /tmp/python3-activitytrack_*.deb
+      - name: Package
+        run: |
+          dpkg-buildpackage -b -us -uc
+          mkdir dist && mv ../activitytrack-desktop_*.deb dist/
+          dpkg-deb --info dist/*.deb
+          dpkg-deb --contents dist/*.deb
+          apt-get install -y ./dist/*.deb
+      - name: Try it
+        run: |
+          activitytrack-desktop --version
+          # the tests against the installed code, not the checkout's
+          mkdir /tmp/t && cp -r tests /tmp/t/ && cd /tmp/t
+          PYTHONPATH=/usr/share/activitytrack-desktop python3 -c "import activitytrack_desktop, sys; print(activitytrack_desktop.__file__)"
+          PYTHONPATH=/usr/share/activitytrack-desktop python3 -m unittest discover -s tests -t . -v
+      - name: Remove
+        run: |
+          apt-get purge -y activitytrack-desktop
+          test ! -e /usr/share/activitytrack-desktop && test ! -e /usr/bin/activitytrack-desktop
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: deb-${{ matrix.suffix }}
+          path: dist/*.deb
+          retention-days: 30
+
+  tarball:
+    needs: [linux, windows]
+    if: ${{ !cancelled() && !failure() }}
+    runs-on: ubuntu-latest
+    container: debian:trixie
+    steps:
+      - run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Tarball
+        run: |
+          V=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' activitytrack_desktop/__init__.py)
+          mkdir dist
+          # the checkout is a container's: git must trust it
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git archive --prefix="activitytrack-desktop-$V/" -o "dist/activitytrack-desktop-$V.tar.gz" HEAD
+          tar -tzf dist/*.tar.gz | grep -c .
+          mkdir /tmp/at && tar -xzf dist/*.tar.gz -C /tmp/at --strip-components=1
+          test -f /tmp/at/activitytrack_desktop/__main__.py
+          test -f /tmp/at/packaging/activitytrack-desktop.desktop
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tarball
+          path: dist/*.tar.gz
+          retention-days: 30
+
+  # docs/DESIGN.md §8: PyInstaller (one folder) and Inno Setup, per user, not signed (D10)
+  windows-installer:
+    needs: [stable, linux, windows]
+    if: ${{ !cancelled() && !failure() && needs.stable.outputs.stable == 'true' }}
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: Libraries and tools
+        run: |
+          python -m pip install -r requirements-windows.txt -r requirements-build-windows.txt
+          $lib = (Get-Content .gitlab/lib-ref).Trim()
+          python -m pip install "git+$env:LIB_URL@$lib"
+      - name: Version
+        run: |
+          $V = (Select-String -Path activitytrack_desktop/__init__.py -Pattern '^__version__ = "(.*)"').Matches[0].Groups[1].Value
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and "v$V" -ne $env:GITHUB_REF_NAME) { throw "tag $env:GITHUB_REF_NAME, version $V" }
+          "AT_VERSION=$V" >> $env:GITHUB_ENV
+          "AT_NUMVERSION=$(($V -split '-')[0])" >> $env:GITHUB_ENV
+      - name: Tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m unittest discover -s tests -t .
+      - name: Bundle
+        run: |
+          pyinstaller --noconfirm --clean --windowed --name ActivityTrack `
+            --icon packaging/windows/activitytrack-desktop.ico `
+            --paths . --collect-submodules keyring.backends --collect-data tzdata `
+            --collect-submodules activitytrack --collect-data activitytrack --collect-data activitytrack_desktop `
+            packaging/windows/launcher.py
+      - name: Try the bundle
+        run: |
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $p = Start-Process dist/ActivityTrack/ActivityTrack.exe -ArgumentList "--selftest", "$pwd/selftest.txt" -Wait -PassThru
+          Get-Content selftest.txt
+          if ($p.ExitCode -ne 0) { throw "selftest: $($p.ExitCode)" }
+          if (-not (Select-String -Path selftest.txt -Pattern "^ok $env:AT_VERSION ")) { throw "selftest output" }
+      - name: Installer
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          & $iscc packaging/windows/activitytrack-desktop.iss
+          if ($LASTEXITCODE -ne 0) { throw "iscc $LASTEXITCODE" }
+          Get-ChildItem dist/*.exe
+      - name: Install, try, uninstall
+        run: |
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $setup = (Get-ChildItem dist/ActivityTrackDesktop-*-setup.exe).FullName
+          Start-Process $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/TASKS=autostart" -Wait
+          $app = "$env:LOCALAPPDATA\Programs\ActivityTrack"
+          if (-not (Test-Path "$app\ActivityTrack.exe")) { throw "not installed in $app" }
+          $run = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name ActivityTrack
+          if ($run.ActivityTrack -notlike "*--hidden") { throw "autostart: $($run.ActivityTrack)" }
+          $p = Start-Process "$app\ActivityTrack.exe" -ArgumentList "--selftest", "$pwd/installed.txt" -Wait -PassThru
+          Get-Content installed.txt
+          if ($p.ExitCode -ne 0) { throw "installed selftest: $($p.ExitCode)" }
+          Start-Process "$app\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES" -Wait
+          Start-Sleep -Seconds 3
+          if (Test-Path "$app\ActivityTrack.exe") { throw "still installed" }
+          if (Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name ActivityTrack -ErrorAction SilentlyContinue) { throw "autostart left" }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows
+          path: dist/ActivityTrackDesktop-*-setup.exe
+          retention-days: 30
+
+  # the files go to the GitHub Release (the "~" of the package versions becomes "." in an asset's name: "-"
+  # instead); a version with a suffix is a beta
+  release:
+    # the Windows installer is built for stable tags only: a pre-release goes without it (skipped is fine)
+    needs: [deb, tarball, windows-installer]
+    if: ${{ !cancelled() && !failure() && startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with: { path: artifacts, merge-multiple: true }
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          PV=$(sed -n '1s/^[^(]*(\(.*\)).*/\1/p' debian/changelog)
+          R="${PV##*-}"   # the Debian revision
+          LIB=$(cat .gitlab/lib-ref)
+          cd artifacts
+          for f in activitytrack-desktop_*~*_all.deb; do mv "$f" "$(echo "$f" | tr '~' '-')"; done
+          sha256sum * > SHA256SUMS && cat SHA256SUMS
+          cd ..
+          {
+            case "$V" in
+              *-*) echo "ActivityTrack Desktop $V: a test release, not for daily use yet."
+                   echo
+                   echo "A server older than ActivityTrack Web 0.9.4 lists the PC among the phones: pair the phone first, or check on the web that the phone keeps \"Invia ai gestionali\"." ;;
+              *) echo "ActivityTrack Desktop $V, for ActivityTrack Web $V." ;;
+            esac
+            echo
+            echo "It needs an ActivityTrack Web server to pair with (Dispositivi → Associa un dispositivo, then paste the link)."
+            echo
+            echo "- Debian 13 / 14, Ubuntu 24.04 / 26.04: \`apt install ./python3-activitytrack_*-<distro>_all.deb ./activitytrack-desktop_${V}-${R}-<distro>_all.deb\` (deb13, deb14, ubuntu24.04, ubuntu26.04); the library [python3-activitytrack]($LIB_URL/releases/tag/$LIB) is in its own release"
+            echo "- Other distributions: \`activitytrack-desktop-$V.tar.gz\`, see [README](https://github.com/$GITHUB_REPOSITORY/blob/v$V/README.md)"
+            if ls artifacts/*.exe >/dev/null 2>&1; then
+              echo "- Windows 10 / 11: \`ActivityTrackDesktop-$V-setup.exe\`, installed for the current user. It is not signed: Windows SmartScreen warns at the first run (More info → Run anyway); check the file against SHA256SUMS."
+            fi
+            echo
+            echo "Manual (it, en): in the documentation release, https://github.com/zipclaude/activitytrack-doc/releases/tag/v$V."
+          } > notes.md
+          # a tag with a suffix (v1.1.0-beta.1) is a beta: a pre-release
+          case "$V" in *-*) pre=--prerelease ;; *) pre= ;; esac
+          gh release create "v$V" artifacts/* --title "ActivityTrack Desktop $V" --notes-file notes.md $pre

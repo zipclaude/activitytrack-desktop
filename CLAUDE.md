@@ -45,3 +45,9 @@ The job `windows` of `.gitlab-ci.yml` runs the same tests on Windows (paid share
 - `.gitlab/lib-ref` (tag of the library), `activitytrack_desktop/__init__.py` (version), `debian/changelog`, `debian/control` (dependency on the library), the man page `.TH`.
 - The manual lives in `activitytrack-doc` (`manual/desktop`, the screenshots come from `scripts/screenshots.py`); the AppStream `<release>` in `packaging/it.infraconsulting.activitytrack_desktop.metainfo.xml` stays here.
 - The Windows executable is built with PyInstaller (`requirements-windows.txt`, `requirements-build-windows.txt`).
+
+## 4. GitHub backup
+
+GitHub (`zipclaude/activitytrack-desktop`) is a backup of the GitLab project: the workflow in `.github/workflows/ci.yml`
+mirrors `.gitlab-ci.yml`; keep them in step. It starts by hand only ("Run workflow", or a push to a branch `ghtest/*`),
+never on pushes, tags or pull requests. The library is cloned from its GitHub copy at `.gitlab/lib-ref`. GitLab-only: the job `testvm` and the merge request pipelines.
