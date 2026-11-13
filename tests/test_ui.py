@@ -73,6 +73,23 @@ class UiTest(unittest.TestCase):
         self.assertTrue(p.unpair.isVisibleTo(p))
         self.assertIn("file leggibile solo dal tuo utente", p.secret.text())
 
+    def test_the_notices_of_the_sync_are_offered_for_dismissal(self):
+        import time
+        from activitytrack_desktop.ui import SyncPanel
+        self.pair()
+        p = SyncPanel(self.session, self.service)
+        self.assertFalse(p.dismiss.isVisibleTo(p))
+        self.session.store.set_state("sync.notices", [{"code": "edit_dropped", "title": "Ticket",
+                                                       "at": int(time.time() * 1000)}])
+        p.refresh()
+        self.assertTrue(p.dismiss.isVisibleTo(p))
+        self.assertIn("«Ticket»", p.status.text())
+        self.assertTrue(needs_attention(self.session, "idle"))
+        p.dismiss.click()
+        self.assertFalse(p.dismiss.isVisibleTo(p))
+        self.assertNotIn("«Ticket»", p.status.text())
+        self.assertFalse(needs_attention(self.session, "idle"))
+
     def menu_texts(self, menu):
         return [a.text() for a in menu.actions()]
 

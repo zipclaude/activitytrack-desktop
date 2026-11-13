@@ -248,6 +248,17 @@ class CommandsTest(unittest.TestCase):
         self.commands.run("stop")
         self.assertEqual(self.told[-1], "Nessuna attività in corso.")
 
+    def test_a_command_tells_what_it_moved(self):
+        work, now = self.actions.work, self.actions.work.clock()
+        a = work.start(StartRequest(client="c1", activity="Rete", start_ms=now - 3_600_000))
+        work.stop(a, at=now + 3_600_000, exact=True)
+        work.start(StartRequest(client="c1", activity="Cavi"))
+        self.actions._done()
+        self.assertEqual(self.told, ["La fine di «Rete» è stata anticipata all'inizio della nuova attività."])
+        # once
+        self.actions._done()
+        self.assertEqual(len(self.told), 1)
+
     def test_no_notice_for_a_command_cancelled_or_failed(self):
         from activitytrack_desktop import home
         from activitytrack.work import WorkError

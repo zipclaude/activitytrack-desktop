@@ -186,6 +186,9 @@ class Commands(QObject):
         self.actions, self.window, self.notifier = actions, window, notifier
         self._busy = False
         notifier.answered.connect(lambda key, _action: key == "shortcut" and window.show_up())
+        # what a command, from the window or a shortcut, left to tell (an end moved back)
+        actions.told.connect(lambda text: notifier.show("notice", "ActivityTrack", text, persistent=False))
+        notifier.answered.connect(lambda key, _action: key == "notice" and window.show_up())
 
     def received(self, line):
         """A line of the single instance's socket: a command, and the launcher's activation token."""

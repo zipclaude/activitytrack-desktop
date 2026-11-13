@@ -129,7 +129,9 @@ class SyncPanel(QWidget):
                                  W.with_key(_("Sincronizza ora"), KEYS["sync"]))
         self.pair = W.button(_("Associa a un server…"), self._pair, "tonal", "devices")
         self.unpair = W.button(_("Dissocia"), self._unpair, "danger")
-        for b in (self.sync_now, self.pair, self.unpair):
+        # the notices of the sync (a change not applied) stay, in the status and the rail's alert, until read
+        self.dismiss = W.button(_("Nascondi gli avvisi"), self._dismiss, "tonal")
+        for b in (self.sync_now, self.dismiss, self.pair, self.unpair):
             row.addWidget(b)
         row.addStretch()
         inner.addLayout(row)
@@ -158,6 +160,7 @@ class SyncPanel(QWidget):
         self.errors.setVisible(bool(errors))
         self.sync_now.setVisible(a is not None and not store.get_state("revoked"))
         self.unpair.setVisible(a is not None)
+        self.dismiss.setVisible(bool(store.notices()))
         self.pair.setText(_("Associa di nuovo…") if a is not None else _("Associa a un server…"))
         self.secret.setText("" if self.session.vault.secure else _(
             "Nessun portachiavi di sistema: il token di accesso è in un file leggibile solo dal tuo utente."))
@@ -167,6 +170,11 @@ class SyncPanel(QWidget):
         if d.exec():
             self.service.sync(full=True)
         self.refresh()
+
+    def _dismiss(self):
+        self.session.store.dismiss_notices()
+        # the status, the rail's alert and the tray follow
+        self.service.changed.emit(self.service.state, self.service.detail)
 
     def _unpair(self):
         ok = QMessageBox.question(self, _("Dissocia"), _(

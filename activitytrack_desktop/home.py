@@ -50,6 +50,9 @@ class Actions(QObject):
 
     changed = Signal()
     redraw = Signal()
+    # what a command left to tell the user (an end moved back, a planned segment removed): the window
+    # posts it as a notification, as the shortcuts' messages
+    told = Signal(str)
 
     def __init__(self, session, parent=None):
         super().__init__(parent)
@@ -68,11 +71,18 @@ class Actions(QObject):
         formats.load(self.session.store)
         self.redraw.emit()
 
+    def _tell_notices(self):
+        notices = self.work.take_notices()
+        if notices:
+            self.told.emit("\n".join(notices))
+
     def _done(self):
+        self._tell_notices()
         self.changed.emit()
 
     def _fail(self, e):
         QMessageBox.warning(self._parent(), "ActivityTrack", error_text(e) if isinstance(e, WorkError) else str(e))
+        self._tell_notices()
         self.changed.emit()
 
     def new_entry(self, todo=None):
