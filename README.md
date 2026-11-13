@@ -34,6 +34,10 @@ distribution) and the desktop portal's GlobalShortcuts through jeepney on Waylan
 ask to confirm the keys). Anywhere, a desktop shortcut can run `activitytrack-desktop --start`,
 `--pause` or `--stop`, which go to the running instance (started when there is none).
 
+A command that moves something you did not ask for (an end moved back, a planned return trip or segment
+removed) is told in a notification; the notices of the sync (an edit not applied after the realignment) stay
+in the status and the alert of the sync panel until **Nascondi gli avvisi**, or 7 days.
+
 The desktop needs a notification area: native on KDE Plasma; on XFCE the panel's
 "Status Tray" (or "Notification Area") plugin.
 
