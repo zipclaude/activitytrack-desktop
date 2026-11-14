@@ -15,7 +15,8 @@ The whole workflow is in
   `main`; then merge `main` into `next`.
 - Beta: tag `vX.Y.Z-beta-N` on `next` (X.Y.Z is the *next* version); Debian version
   `X.Y.Z~beta-N-1` (the CI turns the tag's first hyphen into a tilde,
-  the changelog adds the revision). Needs the unit tests and the local Wine jobs, not the paid Windows pipeline.
+  the changelog adds the revision). Needs the unit tests; its Windows tests and installer run on GitHub,
+  free (§4), not on GitLab's paid runners.
 - Security patch: `security/<name>` cut from `main`, version `X.Y.Z.1`, released at once with
   the security report, then merged into `next`.
 - Test locally first. Pipelines on GitLab's shared runners start only when the owner says so;
@@ -38,7 +39,7 @@ export PYTHONPATH=../python3-activitytrack
 flake8 activitytrack_desktop tests
 dbus-run-session -- python3 -m unittest discover -s tests -t .
 ```
-The job `windows` of `.gitlab-ci.yml` runs the same tests on Windows (paid shared runner, on command).
+The job `windows` of `.gitlab-ci.yml` runs the same tests on Windows (paid shared runner, stable tags only); on a pre-release tag they run on GitHub instead (§4).
 
 ## 3. A release touches
 
@@ -50,5 +51,9 @@ The job `windows` of `.gitlab-ci.yml` runs the same tests on Windows (paid share
 ## 4. GitHub backup
 
 GitHub (`zipclaude/activitytrack-desktop`) is a backup of the GitLab project: the workflow in `.github/workflows/ci.yml`
-mirrors `.gitlab-ci.yml`; keep them in step. It starts by hand only ("Run workflow", or a push to a branch `ghtest/*`),
-never on pushes, tags or pull requests. The library is cloned from its GitHub copy at `.gitlab/lib-ref`. GitLab-only: the job `testvm` and the merge request pipelines.
+mirrors `.gitlab-ci.yml`; keep them in step. It starts by itself only on the push of a pre-release tag (`v*-*`, brought by the push mirror): it runs the
+Windows tests and `windows-installer` and, when green, publishes the GitHub pre-release with the installer and `SHA256SUMS`.
+GitLab's job `windows-github` (script `.gitlab/github-windows-gate.sh`, runnable locally against any past run) waits
+for that run by the tag's commit and puts the installer in GitLab's release; the project variable `WINDOWS_GATE=skip`
+releases without it when GitHub is down. Otherwise it starts by hand only ("Run workflow", or a push to a branch
+`ghtest/*`), never on other pushes, stable tags or pull requests. The library is cloned from its GitHub copy at `.gitlab/lib-ref`. GitLab-only: the job `testvm` and the merge request pipelines.
