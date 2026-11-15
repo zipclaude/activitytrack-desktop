@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
 )
 
 from activitytrack import formats, texts, updates
-from activitytrack.i18n import _
+from activitytrack.i18n import _, policy_language
 from activitytrack.sync import Runner
 
 from . import __version__, autostart, language
@@ -146,6 +146,8 @@ class GeneralPanel(QWidget):
         row.addWidget(self.language)
         row.addStretch()
         ll.addLayout(row)
+        # the choice was changed: the note of the next start stays until the window closes
+        self._changed_language = False
         self.language_note = QLabel(wordWrap=True)
         self.language_note.setProperty("role", "small")
         ll.addWidget(self.language_note)
@@ -205,11 +207,16 @@ class GeneralPanel(QWidget):
         self.autostart.blockSignals(True)
         self.autostart.setChecked(autostart.enabled())
         self.autostart.blockSignals(False)
-        forced = p.language
-        shown = forced or language.chosen(self.actions.session.store)
+        store = self.actions.session.store
+        forced, invalid = policy_language(store)
+        # a policy language that is not one of ours forces English; the user's saved choice is left as it is
+        shown = "en" if invalid else forced or language.chosen(store)
         self.language.setCurrentIndex(max(0, self.language.findData(shown)))
-        self.language.setEnabled(forced is None)
-        self.language.setToolTip(_("Impostato dalla policy") if forced else "")
+        self.language.setEnabled(not (forced or invalid))
+        self.language.setToolTip(_("Impostato dalla policy") if forced or invalid else "")
+        # the policy decides the language: the note of the next start would not be true
+        self.language_note.setText(texts.language_note(store) or (
+            self._restart if self._changed_language and not forced else ""))
         self.date_format.setCurrentIndex(max(0, self.date_format.findData(formats.date_format())))
         self.time_format.setCurrentIndex(max(0, self.time_format.findData(formats.time_format())))
         check, betas = self.updater.core.settings()
@@ -220,9 +227,14 @@ class GeneralPanel(QWidget):
             box.setToolTip(_("Impostato dalla policy") if p.setting_fixed(key) else "")
             box.blockSignals(False)
 
+    @property
+    def _restart(self):
+        return _("La lingua cambia al prossimo avvio di ActivityTrack.")
+
     def _language(self):
         language.save(self.actions.session.store, self.language.currentData())
-        self.language_note.setText(_("La lingua cambia al prossimo avvio di ActivityTrack."))
+        self._changed_language = True
+        self.refresh()
 
     def _formats(self):
         formats.save(self.actions.session.store, self.date_format.currentData(), self.time_format.currentData())

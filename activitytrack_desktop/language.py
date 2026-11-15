@@ -4,13 +4,16 @@ The interface's language, one of the user's preferences (Settings → Generale):
 of the languages with a catalog. It is kept in the local copy's state, as the date and time formats, and
 read by main() before any module that translates its texts is imported: the library's texts and the
 Home build their dictionaries when imported, so the language cannot change under a running window
-(the change is for the next start). The policy's ui.language, when there is one, wins over the choice.
+(the change is for the next start). The policy's ui.language, when there is one, wins over the choice, and
+one that is not a language forces English (i18n.resolve_language, which main() calls); the saved choice is
+never overwritten by it.
 Imports nothing but the i18n module: it must stay light for that reason.
 """
 
-from activitytrack.i18n import LANGUAGES
+from activitytrack.i18n import LANGUAGES, PREFERENCE_KEY
 
-KEY = "language"
+# the library's key: the cli and the tui read the same choice
+KEY = PREFERENCE_KEY
 # each language in its own name, as the web's: never translated
 NAMES = {"it": "Italiano", "en": "English", "de": "Deutsch", "es": "Español"}
 

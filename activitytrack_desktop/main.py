@@ -13,7 +13,7 @@ from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 from PyQt6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
 import activitytrack
-from activitytrack.i18n import _, add_catalogs, set_language
+from activitytrack.i18n import _, add_catalogs, resolve_language, set_language
 from activitytrack.paths import data_dir
 
 from . import __version__
@@ -83,15 +83,15 @@ def _log_errors(folder):
     sys.excepthook = hook
 
 
-def _language(app, forced=None):
+def _language(app, store=None):
     """
-    The interface's language (the policy's, else the user's choice, else the system's), set before
-    the interface's modules are imported; Qt's own texts (Annulla, Sì…) and
-    the dates follow it.
+    The interface's language: the policy's, else the user's choice (Settings → Generale), else the system's,
+    else English (i18n.resolve_language; a policy language that is not one of ours is English). It is set
+    before the interface's modules are imported; Qt's own texts (Annulla, Sì…) and the dates follow it.
     """
     # the desktop's own texts, with the library's
     add_catalogs(Path(__file__).with_name("locale"))
-    lang = set_language(forced or QLocale.system().name())
+    lang = set_language(resolve_language(store, system=QLocale.system().name()))
     locale = QLocale(lang) if lang != QLocale.system().name()[:2] else QLocale.system()
     QLocale.setDefault(locale)
     qt_texts = QTranslator(app)
@@ -184,14 +184,11 @@ def main(argv=None):
         # it still starts: only a second start will not find this one
         _log(folder, f"single instance: cannot listen on {name}: {server.errorString()}")
 
-    from activitytrack.policy import stored
     from activitytrack.session import Session
-    from . import language
 
     # Qt's zone: the system's IANA one on Windows too, for the store's migration to the activity model
     session = Session(folder, allow_http=args.dev, zone=system_zone())
-    # the policy's language, else the user's choice (Settings → Generale), else the system's
-    _language(app, stored(session.store).language or language.chosen(session.store))
+    _language(app, session.store)
     from activitytrack import formats
     formats.load(session.store)
 

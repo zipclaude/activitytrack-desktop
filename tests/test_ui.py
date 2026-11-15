@@ -873,11 +873,49 @@ class GeneralUiTest(unittest.TestCase):
         self.session.store.set_state(language.KEY, "fr")
         self.assertIsNone(language.chosen(self.session.store))
         # the policy forces one: shown, not changeable
-        self.panel.actions.work.policy = Policy({"format": "activitytrack-policy", "schema": 1,
-                                                 "ui": {"language": "es"}})
+        self.set_policy({"language": "es"})
         self.panel.refresh()
         self.assertEqual(box.currentData(), "es")
         self.assertFalse(box.isEnabled())
+        self.assertEqual(box.toolTip(), "Impostato dalla policy")
+        self.assertEqual(self.panel.language_note.text(), "")
+
+    def set_policy(self, ui):
+        import json
+        self.session.store.set_state("policy", json.dumps(
+            {"format": "activitytrack-policy", "schema": 1, **({"ui": ui} if ui is not None else {})}))
+
+    def test_a_policy_language_that_is_not_one_forces_english_and_says_so(self):
+        """The policy's ui.language present but unsupported: English, the combo greyed, the note beside it."""
+        from activitytrack import i18n, texts
+        from activitytrack_desktop import language
+        box = self.panel.language
+        language.save(self.session.store, "de")
+        for ui in ({"language": "fr"}, {"language": "xx_YY"}, {"language": 5}, {"language": ""}):
+            self.set_policy(ui)
+            self.assertEqual(i18n.policy_language(self.session.store), (None, True), ui)
+            self.panel.refresh()
+            self.assertEqual(box.currentData(), "en", ui)
+            self.assertFalse(box.isEnabled(), ui)
+            self.assertEqual(box.toolTip(), "Impostato dalla policy")
+            self.assertEqual(self.panel.language_note.text(), texts.language_note(self.session.store), ui)
+            self.assertIn("inglese", self.panel.language_note.text())
+            # the user's saved choice stays: it comes back when the policy goes
+            self.assertEqual(language.chosen(self.session.store), "de")
+            self.assertEqual(i18n.resolve_language(self.session.store, system="it_IT"), "en")
+        # absent (no ui, ui without language, null): the user's choice, the combo free, no note
+        for ui in (None, {}, {"language": None}):
+            self.set_policy(ui)
+            self.panel.refresh()
+            self.assertEqual(box.currentData(), "de", ui)
+            self.assertTrue(box.isEnabled(), ui)
+            self.assertEqual((box.toolTip(), self.panel.language_note.text()), ("", ""), ui)
+            self.assertEqual(i18n.resolve_language(self.session.store, system="it_IT"), "de")
+        # while the policy speaks the combo is greyed: the saved choice cannot be overwritten
+        self.set_policy({"language": "fr"})
+        self.panel.refresh()
+        self.assertFalse(box.isEnabled())
+        self.assertEqual(language.chosen(self.session.store), "de")
 
     def test_what_comes_from_the_server_is_shown_as_text(self):
         from activitytrack import updates

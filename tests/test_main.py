@@ -194,8 +194,8 @@ sys.exit(M.main(["--data", sys.argv[1]]))
 
 
 class LanguageTest(unittest.TestCase):
-    def start(self, d, chosen=None, policy=None):
-        """main() in a process of English locale, on a data folder with the language chosen, or the policy's."""
+    def start(self, d, chosen=None, policy=None, locale="en_US.UTF-8"):
+        """main() in a process of the [locale], on a data folder with the language chosen, or the policy's."""
         from activitytrack.session import Session
         if chosen or policy:
             store = Session(Path(d) / "data", use_keyring=False).store
@@ -205,8 +205,8 @@ class LanguageTest(unittest.TestCase):
                 store.set_state("policy", json.dumps({"format": "activitytrack-policy", "schema": 1,
                                                       "ui": {"language": policy}}))
             store.close()
-        env = dict(os.environ, HOME=d, QT_QPA_PLATFORM="offscreen", XDG_CONFIG_HOME=d, LC_ALL="en_US.UTF-8",
-                   LANG="en_US.UTF-8", LANGUAGE="en", PYTHONPATH=os.pathsep.join(
+        env = dict(os.environ, HOME=d, QT_QPA_PLATFORM="offscreen", XDG_CONFIG_HOME=d, LC_ALL=locale,
+                   LANG=locale, LANGUAGE=locale[:2], PYTHONPATH=os.pathsep.join(
                        [str(Path(main.__file__).parent.parent), *sys.path]))
         r = subprocess.run([sys.executable, "-c", LANGUAGE_FIRST, str(Path(d) / "data")], env=env,
                            capture_output=True, text=True, timeout=60)
@@ -225,6 +225,17 @@ class LanguageTest(unittest.TestCase):
         # the policy's language wins over the choice
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(self.start(d, chosen="it", policy="de"), ["kind " + catalog["Lavoro"]])
+        # a policy language that is not one of ours forces English, whatever the choice and the system say
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.start(d, chosen="de", policy="fr", locale="it_IT.UTF-8"), ["kind Work"])
+        # no choice, no policy: the system's; a system language we do not have: English
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.start(d, locale="de_DE.UTF-8"), ["kind " + catalog["Lavoro"]])
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.start(d, locale="fr_FR.UTF-8"), ["kind Work"])
+        # the choice wins over the system's
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.start(d, chosen="it", locale="de_DE.UTF-8"), ["kind Lavoro"])
 
     def test_the_texts_are_translated_in_the_language_of_the_system(self):
         with tempfile.TemporaryDirectory() as d:
