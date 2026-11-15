@@ -605,6 +605,17 @@ class EntryRow(W.Surface):
         lay.addWidget(self.more)
 
 
+# the sections of the Home list as the app shows them: the undated ones between the next days and the previous
+# ones (the library's homelist.SECTIONS has them last, which is wrong: see the report of the bug hunt, desktop#33)
+SECTION_ORDER = ("overdue", "missing", "today", "next", "no_date", "earlier", "ignored")
+
+
+def in_app_order(groups):
+    """[(section, items)] of homelist.home in the order of SECTION_ORDER (a section it does not know goes last)."""
+    rank = {s: i for i, s in enumerate(SECTION_ORDER)}
+    return sorted(groups, key=lambda g: rank.get(g[0], len(rank)))
+
+
 def search_field(on_change):
     """The search of a list (Ctrl+F): what is typed narrows the rows below."""
     f = QLineEdit()
@@ -888,7 +899,7 @@ class Home(QWidget):
         tags = theme.tag_colours(work)
         f = self.filters.values()
         words = self.filters.words()
-        groups = homelist.home(work, f["show"], f["window"], f["company"], f["tag"])
+        groups = in_app_order(homelist.home(work, f["show"], f["window"], f["company"], f["tag"]))
         shown = 0
         for section, items in groups:
             items = [it for it in items if matches(work, it[1], words)]

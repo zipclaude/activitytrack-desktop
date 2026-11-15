@@ -15,7 +15,7 @@ from activitytrack.texts import FIELDS
 from activitytrack.homelist import DONE, IGNORED, TODO, sections
 
 from . import theme, widgets as W
-from .home import COLUMN, KEYS, TodoRow, clear, matches, scroll_page, search_field
+from .home import COLUMN, KEYS, TodoRow, clear, in_app_order, matches, scroll_page, search_field
 
 
 class TodosPage(QWidget):
@@ -106,8 +106,8 @@ class TodosPage(QWidget):
         work = self.actions.work
         clear(self.list)
         everything = homelist.all_todos(work) if work.policy.feature("todos") else []
-        groups = sections(everything, [], self.shown(), 0, self.company, tz=work.tz,
-                          planned=homelist.planned_of(work, everything))
+        groups = in_app_order(sections(everything, [], self.shown(), 0, self.company, tz=work.tz,
+                                       planned=homelist.planned_of(work, everything)))
         words = self.search.text().casefold().split()
         shown = 0
         for section, items in groups:

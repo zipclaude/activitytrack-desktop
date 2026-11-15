@@ -193,6 +193,37 @@ class UiTest(unittest.TestCase):
         w.save_todo(None, "Inventario")
         return a, b, old
 
+    def test_the_undated_todos_sit_between_the_next_days_and_the_previous_ones(self):
+        """desktop#33: the library lists "Senza data" after the previous days; the app has it before them."""
+        from datetime import date, timedelta
+
+        from activitytrack_desktop.home import Actions, Home, in_app_order
+        from activitytrack_desktop.todos_ui import TodosPage
+        # the Home remembers its filters between starts: not for the other tests
+        self.addCleanup(lambda: [QSettings().remove(k) for k in ("home/window", "home/show", "todos/done")])
+        self.pair()
+        actions = Actions(self.session)
+        w = actions.work
+        w.save_todo(None, "Senza data")
+        w.save_todo(None, "Domani", plan_date=date.today() + timedelta(days=1), plan_min=9 * 60, duration_min=30)
+        done = w.save_todo(None, "Fatto")
+        w.tick(done)
+        # ticked off three days ago: "Giorni precedenti"
+        self.session.store.write("entry", done, {"closedUtcMs": w.clock() - 3 * 86_400_000}, now_ms=w.clock())
+        self.assertEqual([s for s, _i in in_app_order([("earlier", []), ("no_date", []), ("next", []),
+                                                        ("today", []), ("missing", []), ("overdue", [])])],
+                         ["overdue", "missing", "today", "next", "no_date", "earlier"])
+        for page in (Home(actions), TodosPage(actions)):
+            if isinstance(page, Home):
+                page.filters.show_actions["DONE"].setChecked(True)
+                page.filters.window_actions[0].trigger()
+            else:
+                page.done.setChecked(True)
+            # the section heads are in capitals
+            heads = [lab.text() for lab in page.scroll.widget().findChildren(QLabel)
+                     if lab.text() in ("PROSSIMI GIORNI", "SENZA DATA", "GIORNI PRECEDENTI")]
+            self.assertEqual(heads, ["PROSSIMI GIORNI", "SENZA DATA", "GIORNI PRECEDENTI"], type(page).__name__)
+
     def test_the_home_light_and_dark(self):
         from activitytrack_desktop import theme
         from activitytrack_desktop.home import Actions, BigCard, EntryRow, Home, SmallCard, TodoRow
