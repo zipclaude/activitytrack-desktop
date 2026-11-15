@@ -7,6 +7,8 @@ running or suspended, then the list of to-dos and stopped activities with
 its filters.
 """
 
+import hashlib
+import json
 from datetime import datetime
 
 from PyQt6.QtCore import QObject, QSettings, Qt, QTimer, pyqtSignal as Signal
@@ -21,9 +23,10 @@ from activitytrack.policy import stored
 from activitytrack import homelist, model
 from activitytrack.homelist import DEFAULT_SHOW, SHOWS, WINDOWS
 from activitytrack.texts import KINDS, FIELDS, clock, display_label, entry_actions, error_text, hm
-from activitytrack.work import PAUSE, TRAVEL, WORK, StartRequest, Work, WorkError
+from activitytrack.work import PAUSE, TRAVEL, WORK, StartRequest, WorkError
 
 from . import forms, icons, states, targets, theme, widgets as W
+from .fastwork import SnapshotWork, snapshot
 from .zone import system_zone as _zone
 
 # the round buttons of the commands: icon and colour (CommandButtons.kt); a command is its kind, or "stop"
@@ -57,7 +60,9 @@ class Actions(QObject):
     def __init__(self, session, parent=None):
         super().__init__(parent)
         self.session = session
-        self.work = Work(session.store, stored(session.store), zone=_zone())
+        self.work = SnapshotWork(session.store, stored(session.store), zone=_zone())
+        # what the views last drew (fingerprint()): a sync that brought nothing new redraws nothing
+        self._seen = None
 
     def refresh_policy(self):
         self.work.policy = stored(self.session.store)
@@ -66,10 +71,35 @@ class Actions(QObject):
         from PyQt6.QtWidgets import QApplication
         return QApplication.activeWindow()
 
+    # the state the views show; the rest (last_sync, cursor, offset…) moves at every sync and changes nothing on screen
+    SHOWN_STATE = ("account", "policy", "formats", "revoked", "incompatible", "reminders", "sync.notices")
+
+    def fingerprint(self):
+        """A digest of everything the views draw: the records as the interface reads them, and the shown state."""
+        store = self.session.store
+        h = hashlib.blake2b(digest_size=16)
+        types = sorted(r[0] for r in store.db.execute("SELECT type FROM record UNION SELECT type FROM pending"))
+        for type_ in types:
+            for rec in store.all(type_):
+                # a record the server confirmed looks the same: only where it is kept changes
+                rec.pop("_central", None)
+                rec.pop("_pending", None)
+                h.update(json.dumps(rec, sort_keys=True).encode())
+        for key in self.SHOWN_STATE:
+            h.update(json.dumps(store.get_state(key), sort_keys=True).encode())
+        return h.digest()
+
     def changed_elsewhere(self):
+        """
+        The data may have changed outside a command here (a sync, the command line, the terminal): the views
+        redraw if what they show did. A redraw of a long list takes a while: it is not done for nothing.
+        """
         # the command line or the terminal may have changed the formats too
         formats.load(self.session.store)
-        self.redraw.emit()
+        seen = self.fingerprint()
+        if seen != self._seen:
+            self._seen = seen
+            self.redraw.emit()
 
     def _tell_notices(self):
         notices = self.work.take_notices()
@@ -79,11 +109,14 @@ class Actions(QObject):
     def _done(self):
         self._tell_notices()
         self.changed.emit()
+        # the views are drawn with this: the sync that follows brings nothing new to them
+        self._seen = self.fingerprint()
 
     def _fail(self, e):
         QMessageBox.warning(self._parent(), "ActivityTrack", error_text(e) if isinstance(e, WorkError) else str(e))
         self._tell_notices()
         self.changed.emit()
+        self._seen = self.fingerprint()
 
     def new_entry(self, todo=None):
         if self.session.account is None:
@@ -493,12 +526,13 @@ def _texts(title, sub, dim=False, strike=False, alert=False):
     f = theme.font("title", QFont.Weight.Normal if dim else QFont.Weight.DemiBold)
     f.setStrikeOut(strike)
     t.setFont(f)
+    # the widgets are new, not yet polished: the property alone is enough (W.role would polish each again)
     if dim:
-        W.role(t, "muted")
+        t.setProperty("role", "muted")
     box.addWidget(t)
     s = W.Elided(sub)
     s.setFont(theme.font("label"))
-    W.role(s, "error" if alert else "muted")
+    s.setProperty("role", "error" if alert else "muted")
     if strike:
         f = s.font()
         f.setStrikeOut(True)
@@ -773,6 +807,11 @@ class Filters(QWidget):
         return dict(show=self.shown(), window=window, company=self.company, tag=self.tag)
 
 
+def is_hidden(page):
+    """A page of the window that cannot be seen now (another section is shown, or the window is in the tray)."""
+    return page.parentWidget() is not None and not page.isVisible()
+
+
 def clear(lay):
     """The widgets of a layout gone at once (findChildren no longer sees them)."""
     while lay.count():
@@ -812,6 +851,8 @@ class Home(QWidget):
         self.on_pair = on_pair
         self.selected = None
         self.big_uid = None
+        # not drawn since the data changed (the page is not on view)
+        self.stale = False
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 18, 0, 0)
         # the four ways to begin (§3): Da fare, Lavoro, Viaggio, Assenza
@@ -862,6 +903,33 @@ class Home(QWidget):
         self.refresh()
 
     def refresh(self):
+        with snapshot(self.actions.work):
+            if is_hidden(self):
+                # another section, or the window in the tray: drawn when it is shown (showEvent); the stop keys
+                # still need the big card's activity
+                self._order()
+                self.stale = True
+                return
+            self._refresh()
+
+    def showEvent(self, ev):
+        super().showEvent(ev)
+        if self.stale:
+            self.refresh()
+
+    def _order(self):
+        """The activities running, the big card's first (and big_uid)."""
+        work = self.actions.work
+        running = {e["uid"]: e for e in work.running()}
+        order = targets.running(work)
+        if self.selected in running:
+            order.remove(self.selected)
+            order.insert(0, self.selected)
+        self.big_uid = order[0] if order else None
+        return running, order
+
+    def _refresh(self):
+        self.stale = False
         work = self.actions.work
         policy = work.policy
         paired = self.actions.session.account is not None
@@ -876,12 +944,7 @@ class Home(QWidget):
         tags = theme.tag_colours(work)
         if not paired:
             self.cards.addWidget(self._unpaired())
-        running = {e["uid"]: e for e in work.running()}
-        order = targets.running(work)
-        if self.selected in running:
-            order.remove(self.selected)
-            order.insert(0, self.selected)
-        self.big_uid = order[0] if order else None
+        running, order = self._order()
         if order:
             self.cards.addWidget(BigCard(self.actions, running[order[0]], tags))
             for uid in order[1:]:
@@ -894,6 +957,10 @@ class Home(QWidget):
         self.refresh_list()
 
     def refresh_list(self):
+        with snapshot(self.actions.work):
+            self._refresh_list()
+
+    def _refresh_list(self):
         work = self.actions.work
         clear(self.list)
         tags = theme.tag_colours(work)

@@ -15,13 +15,15 @@ from activitytrack.texts import FIELDS
 from activitytrack.homelist import DONE, IGNORED, TODO, sections
 
 from . import theme, widgets as W
-from .home import COLUMN, KEYS, TodoRow, clear, in_app_order, matches, scroll_page, search_field
+from .fastwork import snapshot
+from .home import COLUMN, KEYS, TodoRow, clear, in_app_order, is_hidden, matches, scroll_page, search_field
 
 
 class TodosPage(QWidget):
     def __init__(self, actions, parent=None):
         super().__init__(parent)
         self.actions = actions
+        self.stale = False
         self.settings = QSettings()
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 18, 0, 0)
@@ -103,6 +105,20 @@ class TodosPage(QWidget):
         return show
 
     def refresh_list(self):
+        if is_hidden(self):
+            # drawn when the section is shown
+            self.stale = True
+            return
+        self.stale = False
+        with snapshot(self.actions.work):
+            self._refresh_list()
+
+    def showEvent(self, ev):
+        super().showEvent(ev)
+        if self.stale:
+            self.refresh_list()
+
+    def _refresh_list(self):
         work = self.actions.work
         clear(self.list)
         everything = homelist.all_todos(work) if work.policy.feature("todos") else []

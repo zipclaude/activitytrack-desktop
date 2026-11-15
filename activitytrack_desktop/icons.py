@@ -224,13 +224,25 @@ def pixmap(name, colour, size=24):
     return pm
 
 
+_materials = {}
+
+
 def material(name, colour, disabled=None):
-    """A QIcon of the icon in [colour] (and [disabled] when greyed), at the usual sizes."""
-    i = QIcon()
-    for size in (16, 20, 24, 32):
-        i.addPixmap(pixmap(name, colour, size))
-        if disabled:
-            i.addPixmap(pixmap(name, disabled, size), QIcon.Mode.Disabled)
+    """
+    A QIcon of the icon in [colour] (and [disabled] when greyed), at the usual sizes. Drawn once per look: a
+    Home list has hundreds of identical buttons and drawing eight pixmaps for each took longer than the rest
+    of the redraw (desktop#34); a QIcon is shared by copy, the buttons never change it.
+    """
+    app = QGuiApplication.instance()
+    key = (name, colour, disabled, app.devicePixelRatio() if app else 1.0)
+    i = _materials.get(key)
+    if i is None:
+        i = QIcon()
+        for size in (16, 20, 24, 32):
+            i.addPixmap(pixmap(name, colour, size))
+            if disabled:
+                i.addPixmap(pixmap(name, disabled, size), QIcon.Mode.Disabled)
+        _materials[key] = i
     return i
 
 

@@ -40,6 +40,13 @@ class UiTest(unittest.TestCase):
         self.session.store.close()
         self.dir.cleanup()
 
+    def dispose(self, *widgets):
+        """Widgets gone with the test: the theme's signal reaches every living page, and the store is closed."""
+        from PyQt6.QtCore import QEvent
+        for w in widgets:
+            w.deleteLater()
+        QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
     def pair(self):
         a = Account("https://at.example.com", None, "d1", "anna", "Anna Rossi", "user", "Infra")
         self.session.store.set_state("account", a.to_json())
@@ -214,6 +221,7 @@ class UiTest(unittest.TestCase):
                                                         ("today", []), ("missing", []), ("overdue", [])])],
                          ["overdue", "missing", "today", "next", "no_date", "earlier"])
         for page in (Home(actions), TodosPage(actions)):
+            self.addCleanup(self.dispose, page)
             if isinstance(page, Home):
                 page.filters.show_actions["DONE"].setChecked(True)
                 page.filters.window_actions[0].trigger()
@@ -223,6 +231,115 @@ class UiTest(unittest.TestCase):
             heads = [lab.text() for lab in page.scroll.widget().findChildren(QLabel)
                      if lab.text() in ("PROSSIMI GIORNI", "SENZA DATA", "GIORNI PRECEDENTI")]
             self.assertEqual(heads, ["PROSSIMI GIORNI", "SENZA DATA", "GIORNI PRECEDENTI"], type(page).__name__)
+
+    def many(self, actions, n=30):
+        """[n] stopped activities with a segment each, and to-dos."""
+        from activitytrack.work import StartRequest
+        w = actions.work
+        now = w.clock()
+        self.session.store.pulled({"type": "client", "uid": "c1", "rev": 1, "fields": {"name": "Biblioteca"}})
+        for i in range(n):
+            start = now - (i * 90 + 200) * 60_000
+            w.start(StartRequest(client="c1", activity=f"Attivita {i}", start_ms=start, end_ms=start + 45 * 60_000))
+        for i in range(n // 2):
+            w.save_todo(None, f"Todo {i}")
+
+    def test_a_redraw_reads_the_segments_once(self):
+        """desktop#34: the library reads every segment of the store for each activity: a redraw took seconds."""
+        from activitytrack_desktop.home import Actions, Home
+        self.pair()
+        actions = Actions(self.session)
+        self.many(actions)
+        home = Home(actions)
+        self.addCleanup(self.dispose, home)
+        home.filters.window_actions[0].trigger()
+        calls = []
+        real = self.session.store.all
+
+        def counting(type_):
+            calls.append(type_)
+            return real(type_)
+        with mock.patch.object(self.session.store, "all", counting):
+            home.refresh()
+        # the snapshot's, and the library's reading of the planned ones: not one per activity
+        self.assertLessEqual(calls.count("segment"), 2, calls)
+        # the same answers as the library's own reading, and none from a stale snapshot
+        w = actions.work
+        uid = next(e["uid"] for e in w.entries() if e.get("status") == "CLOSED")
+        with w.snapshot():
+            inside = w.segments(uid)
+        self.assertEqual(inside, super(type(w), w).segments(uid))
+        self.assertIsNone(w._by_entry)
+        w.edit(uid, activity="Altro")
+        self.assertEqual(w.segments(uid), super(type(w), w).segments(uid))
+
+    def test_a_sync_that_brings_nothing_redraws_nothing(self):
+        """desktop#34: every sync and every command redrew the lists three times, even with nothing new."""
+        from activitytrack_desktop.home import Actions
+        self.pair()
+        actions = Actions(self.session)
+        self.many(actions, 3)
+        redraws = []
+        actions.redraw.connect(lambda: redraws.append(1))
+        actions.changed_elsewhere()
+        self.assertEqual(len(redraws), 1)
+        # a sync that changed nothing, a state that moves at every sync
+        self.session.store.set_state("last_sync", 123456)
+        actions.changed_elsewhere()
+        self.assertEqual(len(redraws), 1)
+        # a command: the views were redrawn by it, the sync that follows has nothing for them
+        uid = actions.work.todo_list()[0]["uid"]
+        actions.todo_done(uid)
+        actions.changed_elsewhere()
+        self.assertEqual(len(redraws), 1)
+        # another interface changed a record, or the formats, or the policy came
+        actions.work.save_todo(None, "Nuovo")
+        actions.changed_elsewhere()
+        self.assertEqual(len(redraws), 2)
+        from activitytrack import formats
+        formats.save(self.session.store, formats.US, formats.H12)
+        actions.changed_elsewhere()
+        self.assertEqual(len(redraws), 3)
+        self.addCleanup(formats.set_formats, formats.EU, formats.H24)
+
+    def test_a_page_out_of_sight_is_drawn_when_it_is_shown(self):
+        """desktop#34: the Da fare page and the Home were rebuilt at every change while another section showed."""
+        from activitytrack_desktop.home import Actions, EntryRow, TodoRow
+        from activitytrack_desktop.ui import MainWindow
+        self.pair()
+        actions = Actions(self.session)
+        self.many(actions, 4)
+        w = MainWindow(self.session, self.service, actions)
+        # the pages go: the window's own connection to the theme stays and must find its widgets
+        self.addCleanup(self.dispose, w.home, w.todos)
+        w.show()
+        try:
+            self.assertEqual(w.current_section(), "home")
+            w.show_section("todos")
+            rows = len(w.todos.findChildren(TodoRow))
+            actions.work.save_todo(None, "Nuovo da fare")
+            actions.changed.emit()
+            # the Home is out of sight: untouched, but marked
+            self.assertTrue(w.home.stale)
+            self.assertEqual(len(w.todos.findChildren(TodoRow)), rows + 1)
+            w.show_section("home")
+            self.assertFalse(w.home.stale)
+            self.assertEqual(len(w.home.findChildren(TodoRow)), rows + 1)
+            w.show_section("todos")
+            w.work_actions.work.save_todo(None, "Ancora")
+            actions.changed.emit()
+            w.show_section("settings")
+            actions.changed.emit()
+            self.assertTrue(w.todos.stale)
+            w.show_section("todos")
+            self.assertEqual(len(w.todos.findChildren(TodoRow)), rows + 2)
+            # the window in the tray draws nothing, and the stop keys still know the big card
+            w.hide()
+            self.assertGreaterEqual(len(w.home.findChildren(EntryRow)), 0)
+            actions.changed.emit()
+            self.assertTrue(w.home.stale and w.todos.stale)
+        finally:
+            w.hide()
 
     def test_the_home_light_and_dark(self):
         from activitytrack_desktop import theme

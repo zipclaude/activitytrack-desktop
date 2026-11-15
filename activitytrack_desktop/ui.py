@@ -14,6 +14,7 @@ from activitytrack import homelist, pairing, texts
 from activitytrack.i18n import _
 
 from . import __version__, icons, theme, widgets as W
+from .fastwork import snapshot
 
 
 class _Pairing(QObject):
@@ -476,6 +477,10 @@ class Tray(QSystemTrayIcon):
         return self.actions.work.running() if self.actions is not None and self.session.account else []
 
     def refresh(self):
+        with snapshot(self.actions.work if self.actions is not None else None):
+            self._refresh()
+
+    def _refresh(self):
         from .home import commands
         from activitytrack.texts import display_label, hm
 
