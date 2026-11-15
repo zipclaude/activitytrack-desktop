@@ -213,5 +213,8 @@
  "Eliminare? Si elimina anche sugli altri dispositivi; si può ripristinare.": "¿Eliminar? Se elimina también en los otros dispositivos; se puede restaurar.",
  "Nuova assenza…": "Nueva ausencia…",
  "Nascondi gli avvisi": "Ocultar los avisos",
- "Clicca per il solo orario di inizio, oppure trascina (o clicca due volte) per inizio e fine": "Haz clic para solo la hora de inicio, o arrastra (o haz clic dos veces) para inicio y fin"
+ "Clicca per il solo orario di inizio, oppure trascina (o clicca due volte) per inizio e fine": "Haz clic para solo la hora de inicio, o arrastra (o haz clic dos veces) para inicio y fin",
+ "Lingua": "Idioma",
+ "Lingua del sistema": "Idioma del sistema",
+ "La lingua cambia al prossimo avvio di ActivityTrack.": "El idioma cambia en el próximo inicio de ActivityTrack."
 }

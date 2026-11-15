@@ -85,7 +85,7 @@ def _log_errors(folder):
 
 def _language(app, forced=None):
     """
-    The interface's language (the policy's, else the system's), set before
+    The interface's language (the policy's, else the user's choice, else the system's), set before
     the interface's modules are imported; Qt's own texts (Annulla, Sì…) and
     the dates follow it.
     """
@@ -186,10 +186,12 @@ def main(argv=None):
 
     from activitytrack.policy import stored
     from activitytrack.session import Session
+    from . import language
 
     # Qt's zone: the system's IANA one on Windows too, for the store's migration to the activity model
     session = Session(folder, allow_http=args.dev, zone=system_zone())
-    _language(app, stored(session.store).language)
+    # the policy's language, else the user's choice (Settings → Generale), else the system's
+    _language(app, stored(session.store).language or language.chosen(session.store))
     from activitytrack import formats
     formats.load(session.store)
 

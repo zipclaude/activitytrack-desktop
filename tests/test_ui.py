@@ -849,6 +849,36 @@ class GeneralUiTest(unittest.TestCase):
         self.session.store.set_state("account", Account("https://at.example.com", None, "d", "anna", "A", "user", "X",
                                                         key).to_json())
 
+    def test_the_language_is_chosen_in_the_general_settings(self):
+        """desktop#36: system default plus every language with a catalog, kept with the other preferences."""
+        from activitytrack.policy import Policy
+        from activitytrack_desktop import language
+        box = self.panel.language
+        self.assertEqual([box.itemData(i) for i in range(box.count())], [None, "it", "en", "de", "es"])
+        self.assertEqual([box.itemText(i) for i in range(1, box.count())],
+                         ["Italiano", "English", "Deutsch", "Español"])
+        self.assertEqual(box.currentData(), None)
+        self.assertEqual(self.panel.language_note.text(), "")
+        box.setCurrentIndex(box.findData("de"))
+        box.activated.emit(box.currentIndex())
+        self.assertEqual(language.chosen(self.session.store), "de")
+        self.assertIn("prossimo avvio", self.panel.language_note.text())
+        # shown again as saved, and back to the system's
+        self.panel.refresh()
+        self.assertEqual(box.currentData(), "de")
+        box.setCurrentIndex(0)
+        box.activated.emit(0)
+        self.assertIsNone(language.chosen(self.session.store))
+        # a language without catalog is not a choice
+        self.session.store.set_state(language.KEY, "fr")
+        self.assertIsNone(language.chosen(self.session.store))
+        # the policy forces one: shown, not changeable
+        self.panel.actions.work.policy = Policy({"format": "activitytrack-policy", "schema": 1,
+                                                 "ui": {"language": "es"}})
+        self.panel.refresh()
+        self.assertEqual(box.currentData(), "es")
+        self.assertFalse(box.isEnabled())
+
     def test_what_comes_from_the_server_is_shown_as_text(self):
         from activitytrack import updates
         from activitytrack.manifest import Release

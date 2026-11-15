@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The start: the single instance's socket and quitting without a tray (offscreen: QT_QPA_PLATFORM=offscreen)."""
 
+import json
 import os
 import subprocess
 import sys
@@ -193,6 +194,38 @@ sys.exit(M.main(["--data", sys.argv[1]]))
 
 
 class LanguageTest(unittest.TestCase):
+    def start(self, d, chosen=None, policy=None):
+        """main() in a process of English locale, on a data folder with the language chosen, or the policy's."""
+        from activitytrack.session import Session
+        if chosen or policy:
+            store = Session(Path(d) / "data", use_keyring=False).store
+            if chosen:
+                store.set_state("language", chosen)
+            if policy:
+                store.set_state("policy", json.dumps({"format": "activitytrack-policy", "schema": 1,
+                                                      "ui": {"language": policy}}))
+            store.close()
+        env = dict(os.environ, HOME=d, QT_QPA_PLATFORM="offscreen", XDG_CONFIG_HOME=d, LC_ALL="en_US.UTF-8",
+                   LANG="en_US.UTF-8", LANGUAGE="en", PYTHONPATH=os.pathsep.join(
+                       [str(Path(main.__file__).parent.parent), *sys.path]))
+        r = subprocess.run([sys.executable, "-c", LANGUAGE_FIRST, str(Path(d) / "data")], env=env,
+                           capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("early []", r.stdout)
+        return [line for line in r.stdout.splitlines() if line.startswith("kind ")]
+
+    def test_the_language_chosen_in_the_settings_applies_to_every_text_at_the_start(self):
+        """desktop#36: the system says English, the user chose German (and Italian: the texts' own language)."""
+        import activitytrack
+        catalog = json.loads(Path(activitytrack.__file__).with_name("locale").joinpath("de.json").read_text("utf-8"))
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.start(d, chosen="de"), ["kind " + catalog["Lavoro"]])
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.start(d, chosen="it"), ["kind Lavoro"])
+        # the policy's language wins over the choice
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.start(d, chosen="it", policy="de"), ["kind " + catalog["Lavoro"]])
+
     def test_the_texts_are_translated_in_the_language_of_the_system(self):
         with tempfile.TemporaryDirectory() as d:
             env = dict(os.environ, HOME=d, QT_QPA_PLATFORM="offscreen", XDG_CONFIG_HOME=d, LC_ALL="en_US.UTF-8",

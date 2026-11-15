@@ -213,5 +213,8 @@
  "Eliminare? Si elimina anche sugli altri dispositivi; si può ripristinare.": "Delete? It is deleted on the other devices too; it can be restored.",
  "Nuova assenza…": "New absence…",
  "Nascondi gli avvisi": "Hide the notices",
- "Clicca per il solo orario di inizio, oppure trascina (o clicca due volte) per inizio e fine": "Click for a start time only, or drag (or click twice) for start and end"
+ "Clicca per il solo orario di inizio, oppure trascina (o clicca due volte) per inizio e fine": "Click for a start time only, or drag (or click twice) for start and end",
+ "Lingua": "Language",
+ "Lingua del sistema": "System language",
+ "La lingua cambia al prossimo avvio di ActivityTrack.": "The language changes the next time ActivityTrack starts."
 }

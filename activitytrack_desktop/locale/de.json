@@ -213,5 +213,8 @@
  "Eliminare? Si elimina anche sugli altri dispositivi; si può ripristinare.": "Löschen? Es wird auch auf den anderen Geräten gelöscht; es kann wiederhergestellt werden.",
  "Nuova assenza…": "Neue Abwesenheit…",
  "Nascondi gli avvisi": "Hinweise ausblenden",
- "Clicca per il solo orario di inizio, oppure trascina (o clicca due volte) per inizio e fine": "Klicke für nur den Beginn, oder ziehe (oder klicke zweimal) für Beginn und Ende"
+ "Clicca per il solo orario di inizio, oppure trascina (o clicca due volte) per inizio e fine": "Klicke für nur den Beginn, oder ziehe (oder klicke zweimal) für Beginn und Ende",
+ "Lingua": "Sprache",
+ "Lingua del sistema": "Systemsprache",
+ "La lingua cambia al prossimo avvio di ActivityTrack.": "Die Sprache ändert sich beim nächsten Start von ActivityTrack."
 }

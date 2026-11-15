@@ -15,7 +15,7 @@ from activitytrack import formats, texts, updates
 from activitytrack.i18n import _
 from activitytrack.sync import Runner
 
-from . import __version__, autostart
+from . import __version__, autostart, language
 
 CHECK_EVERY_MS = 3600_000
 
@@ -133,6 +133,23 @@ class GeneralPanel(QWidget):
         self.autostart.toggled.connect(self._autostart)
         sl.addWidget(self.autostart)
         lay.addWidget(start)
+        # the language: the system's or one of the catalogs; it applies at the next start, the texts of the
+        # library and of the pages are built when they are imported
+        lang = QGroupBox(_("Lingua"))
+        ll = QVBoxLayout(lang)
+        row = QHBoxLayout()
+        self.language = QComboBox()
+        self.language.addItem(_("Lingua del sistema"), None)
+        for code in language.LANGUAGES:
+            self.language.addItem(language.NAMES[code], code)
+        self.language.activated.connect(self._language)
+        row.addWidget(self.language)
+        row.addStretch()
+        ll.addLayout(row)
+        self.language_note = QLabel(wordWrap=True)
+        self.language_note.setProperty("role", "small")
+        ll.addWidget(self.language_note)
+        lay.addWidget(lang)
         # dates and times as on ActivityTrack Web; the command line and the terminal follow
         shown = QGroupBox(_("Date e orari"))
         fl = QFormLayout(shown)
@@ -188,6 +205,11 @@ class GeneralPanel(QWidget):
         self.autostart.blockSignals(True)
         self.autostart.setChecked(autostart.enabled())
         self.autostart.blockSignals(False)
+        forced = p.language
+        shown = forced or language.chosen(self.actions.session.store)
+        self.language.setCurrentIndex(max(0, self.language.findData(shown)))
+        self.language.setEnabled(forced is None)
+        self.language.setToolTip(_("Impostato dalla policy") if forced else "")
         self.date_format.setCurrentIndex(max(0, self.date_format.findData(formats.date_format())))
         self.time_format.setCurrentIndex(max(0, self.time_format.findData(formats.time_format())))
         check, betas = self.updater.core.settings()
@@ -197,6 +219,10 @@ class GeneralPanel(QWidget):
             box.setEnabled(not p.setting_fixed(key))
             box.setToolTip(_("Impostato dalla policy") if p.setting_fixed(key) else "")
             box.blockSignals(False)
+
+    def _language(self):
+        language.save(self.actions.session.store, self.language.currentData())
+        self.language_note.setText(_("La lingua cambia al prossimo avvio di ActivityTrack."))
 
     def _formats(self):
         formats.save(self.actions.session.store, self.date_format.currentData(), self.time_format.currentData())
