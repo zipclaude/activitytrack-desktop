@@ -341,6 +341,54 @@ class UiTest(unittest.TestCase):
         finally:
             w.hide()
 
+    def test_the_plan_of_a_todo_picks_the_interval_and_fills_the_duration(self):
+        """desktop#35: New ToDo, Plan, "alle": the grid chooses start and end and the duration follows."""
+        from PyQt6.QtCore import QPoint, Qt
+        from PyQt6.QtTest import QTest
+
+        from activitytrack_desktop import forms
+        from activitytrack_desktop.home import Actions
+        from activitytrack_desktop.timegrid_ui import TimeGridDialog
+        self.pair()
+        actions = Actions(self.session)
+        d = forms.TodoDialog(actions.work)
+        self.addCleanup(self.dispose, d)
+        plan = d.plan
+        plan.on.setChecked(True)
+        plan.timed.setChecked(True)
+        plan.time.setTime(plan.time.time().fromString("09:00", "HH:mm"))
+        seen = []
+
+        def drive(first, last):
+            def fake(dialog):
+                seen.append((dialog.ranged, dialog.point, dialog.grid.selection()))
+                g = dialog.grid
+
+                def pos(i):
+                    return QPoint(int(g._x(i % 12) + 8), int((i // 12 - g.first) * 24 + 10))
+                QTest.mousePress(g, Qt.MouseButton.LeftButton, pos=pos(first))
+                QTest.mouseMove(g, pos(last))
+                QTest.mouseRelease(g, Qt.MouseButton.LeftButton, pos=pos(last))
+                dialog._ok()
+                return True
+            return fake
+        # 10:00 to 11:30 (the last cell is 11:25)
+        with mock.patch.object(TimeGridDialog, "exec", drive(10 * 12, 11 * 12 + 5)):
+            plan.grid.click()
+        self.assertEqual(seen[0][:2], (True, True))
+        self.assertEqual(plan.time.time().toString("HH:mm"), "10:00")
+        self.assertEqual(plan.duration.value(), 90)
+        # reopened on what is chosen: 10:00 with 90 minutes
+        with mock.patch.object(TimeGridDialog, "exec", drive(14 * 12, 14 * 12)):
+            plan.grid.click()
+        self.assertEqual(seen[1][2], (600, 690))
+        # one cell alone: a start without a duration
+        self.assertEqual((plan.time.time().toString("HH:mm"), plan.duration.value()), ("14:00", 0))
+        day, minute, duration = plan.value()
+        self.assertEqual((minute, duration), (14 * 60, None))
+        # the due date's grid stays a single time
+        self.assertFalse(d.due.duration)
+
     def test_the_home_light_and_dark(self):
         from activitytrack_desktop import theme
         from activitytrack_desktop.home import Actions, BigCard, EntryRow, Home, SmallCard, TodoRow
@@ -948,6 +996,50 @@ class TimeGridTest(unittest.TestCase):
         QTest.mouseClick(g, left, pos=self._centre(g, 18 * 12 + 5))
         d._ok()
         self.assertEqual((d.start, d.end), (8 * 60, 18 * 60 + 30))
+
+    def test_a_plan_takes_a_start_alone_or_a_start_and_an_end(self):
+        """desktop#35: the plan's grid picks the interval, as the app's; one click is a start without end."""
+        from datetime import date
+
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtTest import QTest
+
+        from activitytrack_desktop.timegrid_ui import TimeGridDialog
+
+        left = Qt.MouseButton.LeftButton
+        d = TimeGridDialog(date(2026, 11, 2), 9 * 60, None, ranged=True, point=True)
+        g = d.grid
+        QTest.mouseClick(g, left, pos=self._centre(g, 10 * 12 + 3))
+        # the start alone, with the hint of both ways; OK takes it
+        self.assertEqual(d.head.text(), "10:15")
+        self.assertTrue(d.hint.isVisibleTo(d))
+        d._ok()
+        self.assertEqual((d.start, d.end), (10 * 60 + 15, None))
+        # a drag: start and end
+        d = TimeGridDialog(date(2026, 11, 2), None, None, ranged=True, point=True)
+        g = d.grid
+        QTest.mousePress(g, left, pos=self._centre(g, 10 * 12))
+        QTest.mouseMove(g, self._centre(g, 10 * 12 + 5))
+        QTest.mouseRelease(g, left, pos=self._centre(g, 10 * 12 + 5))
+        self.assertEqual(d.head.text(), "10:00 – 10:30 · 0:30")
+        d._ok()
+        self.assertEqual((d.start, d.end), (600, 630))
+        # two clicks
+        d = TimeGridDialog(date(2026, 11, 2), None, None, ranged=True, point=True)
+        QTest.mouseClick(d.grid, left, pos=self._centre(d.grid, 10 * 12))
+        QTest.mouseClick(d.grid, left, pos=self._centre(d.grid, 11 * 12 + 2))
+        d._ok()
+        self.assertEqual((d.start, d.end), (600, 11 * 60 + 15))
+        # the time typed keeps the duration the plan had
+        d = TimeGridDialog(date(2026, 11, 2), 9 * 60, 9 * 60 + 45, ranged=True, point=True)
+        d.exact.setTime(d.exact.time().fromString("14:00", "HH:mm"))
+        d._exact()
+        self.assertEqual((d.start, d.end), (14 * 60, 14 * 60 + 45))
+        # without point the field opened takes the cell alone, as before
+        d = TimeGridDialog(date(2026, 11, 2), None, None, ranged=True)
+        QTest.mouseClick(d.grid, left, pos=self._centre(d.grid, 10 * 12))
+        d._ok()
+        self.assertEqual((d.start, d.end), (600, None))
 
     def test_a_single_time_and_twelve_hours(self):
         from datetime import date

@@ -24,7 +24,7 @@ from activitytrack.texts import (
 from activitytrack.work import PAUSE, STOP, SUSPEND, TRAVEL, WORK, StartRequest, WorkError
 
 from . import icons, states, theme, widgets as W
-from .timegrid_ui import attach_range, attach_single
+from .timegrid_ui import attach_plan, attach_range, attach_single
 
 KEEP = "KEEP"
 
@@ -647,14 +647,17 @@ class _DayTime(QWidget):
         self.timed = QCheckBox(_("alle"))
         self.time = QTimeEdit(QTime(9, 0))
         _formatted(self.day, self.time)
-        self.grid = attach_single(work, self.day, self.time, parent=self)
-        for w in (self.on, self.day, self.timed, self.time, self.grid):
-            lay.addWidget(w)
         self.duration = None
         if with_duration:
             self.duration = QSpinBox(minimum=0, maximum=24 * 60, singleStep=15, suffix=_(" min"))
             self.duration.setSpecialValueText(_("senza durata"))
-            lay.addWidget(self.duration)
+            # the plan: the grid picks the start and the end, and the duration with them
+            self.grid = attach_plan(work, self.day, self.time, self.duration, parent=self)
+        else:
+            self.grid = attach_single(work, self.day, self.time, parent=self)
+        for w in (self.on, self.day, self.timed, self.time, self.grid, self.duration):
+            if w is not None:
+                lay.addWidget(w)
         lay.addStretch()
         self.on.toggled.connect(self._enable)
         self.timed.toggled.connect(self._enable)
@@ -700,7 +703,8 @@ class TodoDialog(_Dialog):
         super().__init__(_("Da fare") if uid else _("Nuovo Da fare"), parent)
         self.work, self.uid = work, uid
         self.result_uid = uid
-        self.setMinimumWidth(560)
+        # the plan's line (day, time, grid, duration) fits beside its label
+        self.setMinimumWidth(680)
         p = work.policy
         t = work.entry(uid) if uid else {}
         if uid:

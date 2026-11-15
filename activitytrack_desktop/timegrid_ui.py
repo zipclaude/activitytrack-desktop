@@ -130,14 +130,18 @@ class TimeGridDialog(QDialog):
     """
     A time, or a start and an end, on the grid. After exec(): start and end
     in minutes of the day (end None for a single time; above 1440 the next
-    day), or exact for a time typed off the grid.
+    day), or exact for a time typed off the grid. [point] (with [ranged]): one click then OK is a start
+    alone, end None (a planned to-do may be a point in time, as the app's grid).
     """
 
-    def __init__(self, day, start=None, end=None, ranged=False, busy=(), opened_end=False, parent=None):
+    def __init__(self, day, start=None, end=None, ranged=False, busy=(), opened_end=False, parent=None,
+                 point=False):
         super().__init__(parent)
         self.setWindowTitle(_("Orari") if ranged else _("Orario"))
-        self.ranged, self.opened_end = ranged, opened_end
+        self.ranged, self.opened_end, self.point = ranged, opened_end, point and ranged
         self.start = self.end = None
+        # a time typed off the grid keeps the span the plan had
+        self._span = end - start if self.point and start is not None and end is not None else None
         at = start if start is not None else end
         first = timegrid.window_for(at) if at is not None else 7
         lay = QVBoxLayout(self)
@@ -146,7 +150,9 @@ class TimeGridDialog(QDialog):
         self.head.setStyleSheet("font-weight: 600")
         lay.addWidget(QLabel(f"{days[day.weekday()]} {formats.day(day)}"))
         lay.addWidget(self.head)
-        self.hint = QLabel(_("Clicca l'ultima casella"))
+        self.hint = QLabel(
+            _("Clicca per il solo orario di inizio, oppure trascina (o clicca due volte) per inizio e fine")
+            if self.point else _("Clicca l'ultima casella"))
         self.hint.setStyleSheet("color: palette(placeholder-text)")
         lay.addWidget(self.hint)
         self.grid = GridView(ranged, first, busy)
@@ -178,6 +184,11 @@ class TimeGridDialog(QDialog):
 
     def _show(self):
         start, end = self.grid.selection()
+        if self.point and self.grid.waiting:
+            # a start alone for now: the end may follow
+            self.head.setText(formats.minutes(start))
+            self.hint.setVisible(True)
+            return
         if self.ranged:
             shown = [formats.minutes(x) if x is not None else "…" for x in (start, end)]
             text = " – ".join(shown)
@@ -199,6 +210,8 @@ class TimeGridDialog(QDialog):
             self.end = minute
         else:
             self.start = minute
+            if self._span:
+                self.end = minute + self._span
         self.accept()
 
     def _ok(self):
@@ -209,6 +222,9 @@ class TimeGridDialog(QDialog):
         start, end = timegrid.span(g.a, g.b)
         if not self.ranged:
             self.start = start
+        elif g.waiting and self.point:
+            # a start alone
+            self.start, self.end = start, None
         elif g.waiting:
             # one cell only: the field opened takes it, the other stays
             if self.opened_end:
@@ -258,6 +274,28 @@ def attach_range(work, start_edit, end_edit, skip=None, parent=None):
         b.clicked.connect(open_)
         buttons.append(b)
     return buttons
+
+
+def attach_plan(work, day_edit, time_edit, duration_spin, parent=None):
+    """
+    A grid button for the plan of a to-do: the start and the end are chosen together and the duration is
+    the span (as the app's); a click on one cell alone is a start without a duration.
+    """
+    b = grid_button(parent)
+
+    def open_():
+        qday = day_edit.date()
+        day = _date(qday.year(), qday.month(), qday.day())
+        t = time_edit.time()
+        start = t.hour() * 60 + t.minute()
+        minutes = duration_spin.value()
+        d = TimeGridDialog(day, start, start + minutes if minutes else None, ranged=True, busy=work.busy(day),
+                           parent=parent, point=True)
+        if d.exec() and d.start is not None:
+            time_edit.setTime(QTime(d.start // 60, d.start % 60))
+            duration_spin.setValue(d.end - d.start if d.end is not None and d.end > d.start else 0)
+    b.clicked.connect(open_)
+    return b
 
 
 def attach_single(work, day_edit, time_edit, parent=None):
