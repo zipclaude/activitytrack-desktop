@@ -156,6 +156,15 @@ class CatalogsTest(unittest.TestCase):
                          ["To-dos", "Aufgaben", "Pendientes"])
         self.assertEqual(catalogs["de"]["Nuovo viaggio"], "Neue Reise")
 
+    def test_a_prompt_reads_the_same_in_the_settings_as_in_the_reminder(self):
+        # the settings quote the reminders' questions («Ancora in pausa?»): the same words in every language
+        for lang, catalog in _catalogs().items():
+            self.assertIn(catalog["Ancora in pausa?"], catalog["«Ancora in pausa?»"], lang)
+            self.assertIn(catalog["Ancora in pausa?"], catalog["«Ancora in pausa?» ogni (min)"], lang)
+            stem = catalog["Ancora su %s?"].split("%s")[0]
+            for key in ("«Ancora su …?» mentre un'attività è in corso", "«Ancora su …?» ogni (min)"):
+                self.assertIn(stem, catalog[key], lang)
+
     def test_the_new_texts_of_1_0_are_there(self):
         # the plan's grid (desktop#35) and the language (desktop#36)
         for lang, catalog in _catalogs().items():

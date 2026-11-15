@@ -304,7 +304,8 @@ class UiTest(unittest.TestCase):
 
     def test_a_page_out_of_sight_is_drawn_when_it_is_shown(self):
         """desktop#34: the Da fare page and the Home were rebuilt at every change while another section showed."""
-        from activitytrack_desktop.home import Actions, EntryRow, TodoRow
+        from activitytrack.work import StartRequest
+        from activitytrack_desktop.home import Actions, BigCard, TodoRow
         from activitytrack_desktop.ui import MainWindow
         self.pair()
         actions = Actions(self.session)
@@ -335,9 +336,20 @@ class UiTest(unittest.TestCase):
             self.assertEqual(len(w.todos.findChildren(TodoRow)), rows + 2)
             # the window in the tray draws nothing, and the stop keys still know the big card
             w.hide()
-            self.assertGreaterEqual(len(w.home.findChildren(EntryRow)), 0)
+            w.home.stale = w.todos.stale = False
+            self.assertIsNone(w.home.big_uid)
+            uid = actions.work.start(StartRequest(client="c1", activity="In corso"))
             actions.changed.emit()
             self.assertTrue(w.home.stale and w.todos.stale)
+            self.assertEqual(w.home.findChildren(BigCard), [])
+            self.assertEqual((w.home.big_uid, w.focused_uid), (uid, uid))
+            # shown again: the section on view is drawn, the Home when its turn comes
+            w.show()
+            self.assertFalse(w.todos.stale)
+            self.assertTrue(w.home.stale)
+            w.show_section("home")
+            self.assertFalse(w.home.stale)
+            self.assertEqual([c.uid for c in w.home.findChildren(BigCard)], [uid])
         finally:
             w.hide()
 
