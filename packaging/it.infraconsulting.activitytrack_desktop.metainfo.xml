@@ -6,6 +6,8 @@
   <name>ActivityTrack</name>
   <summary>Running activities and to-dos of ActivityTrack, from the tray</summary>
   <summary xml:lang="it">Attività in corso e Da fare di ActivityTrack, dall'area di notifica</summary>
+  <summary xml:lang="de">Laufende Tätigkeiten und Aufgaben von ActivityTrack, aus dem Infobereich</summary>
+  <summary xml:lang="es">Actividades en curso y pendientes de ActivityTrack, desde el área de notificación</summary>
   <description>
     <p>ActivityTrack Desktop keeps the running activities and the to-dos of the ActivityTrack app a click away from the system tray, so that an activity goes in from the keyboard instead of the phone.</p>
     <p>It is paired with the organisation's ActivityTrack Web server like a phone and syncs both ways; without a network it keeps working and syncs when the network is back.</p>
