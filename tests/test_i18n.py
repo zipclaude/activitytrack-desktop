@@ -63,7 +63,7 @@ SAME_AS_ITALIAN = {
 }
 # the literals of the sources that are not interface texts: the name of a key of the keyboard
 NOT_TEXTS = {("hotkeys.py", "Home")}
-SAME_AS_ENGLISH = {"de": {"ISO (2026-12-31)", "Organizzazione", "Pausa", "Server", "Stato"},
+SAME_AS_ENGLISH = {"de": {"ISO (2026-12-31)", "Organizzazione", "Pausa", "Server"},
                    "es": {" min", "Generale", "ISO (2026-12-31)"}}
 
 

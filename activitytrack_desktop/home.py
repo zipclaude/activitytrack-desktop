@@ -444,7 +444,7 @@ class EmptyCard(W.Surface):
         row.addStretch()
         paired = actions.session.account is not None
         allowed = work.policy.feature("entries") and paired
-        self.todo = W.Command(_("Da fare"), "checkbox", theme.GREY, lambda: actions.new_todo(), 64,
+        self.todo = W.Command(display_label(model.TODO), "checkbox", theme.GREY, lambda: actions.new_todo(), 64,
                               W.with_key(_("Nuovo Da fare"), KEYS["new_todo"]))
         self.todo.button.setEnabled(paired and work.policy.feature("todos"))
         self.todo.setVisible(work.policy.feature("todos"))
@@ -559,7 +559,8 @@ def _side(when, extra="", alert=False, dots=None):
 
 class TodoRow(W.Surface):
     """
-    A TODO activity of the lists: its mark (the displayed state), the title, "client · Da fare · state";
+    A TODO activity of the lists: its mark (the displayed state), the title, "client · state" (the state "Da fare"
+    is left out in the list of the to-dos, where every row has it);
     when on the right; start and done at hand, the rest in a menu. A click opens it.
     """
 
@@ -574,7 +575,8 @@ class TodoRow(W.Surface):
         self.clicked.connect(lambda: actions.edit(uid))
         lay = _row_shell(self, st)
         who = work.name("client", t.get("clientUid")) or work.name("company", t.get("companyUid"))
-        parts = [who, _("Da fare") if kind_word else "", display_label(st) if st != model.TODO else ""]
+        # the state, as the app's rows: "Da fare" (the state's word, not the list's name), "Pianificata", "In ritardo"…
+        parts = [who, display_label(st) if kind_word or st != model.TODO else ""]
         if t.get("priority") and not over:
             parts.append(texts.PRIORITIES.get(t["priority"], ""))
         box, self.title, self.sub = _texts(t.get("activity") or "", " · ".join(x for x in parts if x), over,
@@ -856,7 +858,8 @@ class Home(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 18, 0, 0)
         # the four ways to begin (§3): Da fare, Lavoro, Viaggio, Assenza
-        self.new_todo = W.button(_("Da fare"), lambda: actions.new_todo(), None, "add",
+        # the state's word, as the app's button (state_todo)
+        self.new_todo = W.button(display_label(model.TODO), lambda: actions.new_todo(), None, "add",
                                  W.with_key(_("Nuovo Da fare"), KEYS["new_todo"]))
         self.new = W.button(KINDS[WORK], lambda: actions.new_entry(), "primary", "play",
                             W.with_key(_("Nuova attività"), KEYS["new_entry"]))

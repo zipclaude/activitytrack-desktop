@@ -169,6 +169,19 @@ class UiTest(unittest.TestCase):
         home = Home(actions)
         rows = home.scroll.widget().findChildren(TodoRow)
         self.assertEqual(len(rows), 1)
+        # the row says the client and the state, as the app's: no "Da fare" (the list's name) before the state
+        self.assertEqual(rows[0].sub.text(), "Hotel Belvedere · Pianificata")
+        plain = actions.work.save_todo(None, "Senza piano")
+        home.refresh()
+        from activitytrack_desktop.todos_ui import TodosPage
+        page = TodosPage(actions)
+        self.addCleanup(self.dispose, page)
+        self.assertEqual([r.sub.text() for r in home.scroll.widget().findChildren(TodoRow) if r.uid == plain],
+                         ["Da fare"])
+        self.assertEqual([r.sub.text() for r in page.findChildren(TodoRow) if r.uid == plain], [""])
+        self.assertEqual(home.new_todo.text(), "Da fare")
+        actions.work.delete(plain)
+        home.refresh()
         w = MainWindow(self.session, self.service, actions)
         tray = Tray(self.session, self.service, w, quit_app=lambda: None, actions=actions)
         start = [a for a in tray.contextMenu().actions() if a.text() == "Avvia Da fare"]
