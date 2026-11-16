@@ -115,13 +115,13 @@ class UiTest(unittest.TestCase):
         actions.work.start(StartRequest(client="c1", activity="Rete"))
         t.refresh()
         texts = self.menu_texts(t.contextMenu())
-        self.assertEqual(texts[0], "Biblioteca · Rete — In lavoro")
+        self.assertEqual(texts[0], "Biblioteca · Rete — Lavoro")
         self.assertIn("Nuova attività…", texts)
         self.assertIn("Sincronizza ora", texts)
         sub = [a.text() for a in t.contextMenu().actions()[0].menu().actions()]
         self.assertEqual(sub[:3], ["Pausa", "Viaggio", "Stop"])
         self.assertNotIn("Sospendi", sub)
-        self.assertIn("Biblioteca · Rete — In lavoro", t.toolTip())
+        self.assertIn("Biblioteca · Rete — Lavoro", t.toolTip())
         # middle click: pause, then back to work
         t._pause_or_resume()
         self.assertEqual(actions.work.running()[0]["mode"], "PAUSE")

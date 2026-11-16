@@ -173,7 +173,7 @@ class Command(QWidget):
 
 
 class Pill(QWidget):
-    """The state, coloured, with its icon: "In lavoro dalle 03:11" (StatePill)."""
+    """The state, coloured, with its icon: "Lavoro dalle 03:11" (StatePill)."""
 
     def __init__(self, text, colour, icon=None, parent=None):
         super().__init__(parent)
