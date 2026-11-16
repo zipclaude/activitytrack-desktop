@@ -37,6 +37,7 @@ and is final at the release.
   segment removed) is shown as a notification.
 - The notices of the sync appear in Settings, Sincronizzazione (and keep the alert on the
   sync button of the rail), with a button "Nascondi gli avvisi" to dismiss them.
+- Licences: every source file carries its licence header, and the Windows installer carries the licences of what the executable bundles.
 
 Various bug fixes.
 
