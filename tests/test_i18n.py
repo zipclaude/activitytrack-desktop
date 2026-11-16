@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import activitytrack_desktop
 from activitytrack import i18n
 from activitytrack.policy import Policy
 
@@ -53,7 +54,8 @@ class I18nTest(unittest.TestCase):
         self.assertIsNone(Policy({"format": "activitytrack-policy", "schema": 1, "ui": {"language": "fr"}}).language)
 
 
-PACKAGE = Path(__file__).resolve().parent.parent / "activitytrack_desktop"
+# the code under test, wherever it is: the checkout, or the installed package in the packages' job
+PACKAGE = Path(activitytrack_desktop.__file__).resolve().parent
 PACKAGING = Path(__file__).resolve().parent.parent / "packaging"
 # the texts that are the same word in the language as in Italian (the catalogs' keys), and in English
 SAME_AS_ITALIAN = {
@@ -172,6 +174,7 @@ class CatalogsTest(unittest.TestCase):
                          "Clicca per il solo orario di inizio, oppure trascina (o clicca due volte) per inizio e fine"):
                 self.assertIn(text, catalog, lang)
 
+    @unittest.skipUnless(PACKAGING.exists(), "not in a source tree")
     def test_the_launcher_and_the_store_page_speak_every_language(self):
         entry = (PACKAGING / "activitytrack-desktop.desktop").read_text(encoding="utf-8")
         for key in ("GenericName", "Comment", "Keywords"):
