@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it>
 """
 System-wide keyboard shortcuts: one backend per desktop, chosen at run
 time. Windows: RegisterHotKey; X11: XGrabKey on the root window

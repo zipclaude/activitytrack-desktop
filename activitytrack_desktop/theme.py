@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it>
 """
 The app's Material 3 look (docs/DESIGN.md §6.4): the tonal palette of the
 launcher green #1F5C4A, light or dark as the system, on Qt's Fusion style

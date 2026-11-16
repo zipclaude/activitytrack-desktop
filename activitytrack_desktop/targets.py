@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it>
 """
 Which activity a keyboard command acts on (docs/DESIGN.md §6.5), without
 Qt: the window's shortcuts and the global ones share it. Every function

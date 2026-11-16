@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- SPDX-FileCopyrightText: 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it> -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="108" height="108">
 	<!-- the app's launcher icon (app res/drawable/ic_launcher_foreground.xml) -->
 	<rect width="108" height="108" rx="26" fill="#1F5C4A"/>

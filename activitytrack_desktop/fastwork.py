@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it>
 """
 The library's Work reads the segments of one activity by reading all of them and keeping the ones it wants
 (Work.segments: `store.all("segment")` filtered in Python), and every JSON of every segment is parsed again

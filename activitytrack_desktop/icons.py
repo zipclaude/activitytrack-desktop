@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it>
 """
 The icons, drawn so that they need no image files. The tray icon: a disc
 in the colour of the state (the app's: work green, pause yellow, travel
 blue; grey when nothing runs) with its sign, and a red dot when the sync
-needs attention. The window's: the app's Material icons (Apache-2.0, the
-web's _icons.html) as SVG path data, painted in any colour.
+needs attention. The window's: the app's icons (part of them Material Icons,
+Apache-2.0: see PATHS) as SVG path data, painted in any colour.
 """
 
 import re
@@ -75,7 +76,11 @@ def icon(state=IDLE, alert=False):
 
 # ---- the window's icons ----
 
-# the app's drawables (24×24), as in the web's _icons.html
+# the app's drawables (24×24), as in the web's _icons.html. These have the shape of the Material Icons
+# of the same subject (Google, Apache License 2.0: LICENSES/Apache-2.0.txt); the others were drawn for
+# ActivityTrack:
+#   home, todo, settings, play, pause, stop, bin, checkbox, add, done, clear, sync, edit, search, clock,
+#   devices
 PATHS = {
     "home": "M12,3L2.5,11.5H5V20.5H10V14.5H14V20.5H19V11.5H21.5Z",
     "todo": "M22,7h-9v2h9V7zM22,15h-9v2h9V15zM5.54,11L2,7.46l1.41,-1.41l2.12,2.12l4.24,-4.24l1.41,1.41L5.54,11z"

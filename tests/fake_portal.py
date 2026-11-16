@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it>
 """
 The desktop portal's GlobalShortcuts on the session bus (jeepney), for
 the shortcuts' test: it answers each request as a desktop whose user

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it>
 # The libraries bundled in the Windows installer (docs/DESIGN.md §8):
 # the versions of Debian 13 where Windows wheels exist.
 PyQt6==6.9.0

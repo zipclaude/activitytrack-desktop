@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it>
 """
 The app's grid of 5-minute cells for choosing times (web issue #38, the
 library's timegrid): one row per hour, 12 hours at a time, ▲ Prima /

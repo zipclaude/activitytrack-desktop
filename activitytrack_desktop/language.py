@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it>
 """
 The interface's language, one of the user's preferences (Settings → Generale): "system" (None) or one
 of the languages with a catalog. It is kept in the local copy's state, as the date and time formats, and

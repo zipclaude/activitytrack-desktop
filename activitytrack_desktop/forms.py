@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it>
 """
 The activity forms (docs/DESIGN.md §6.2–6.3): the quick entry, keyboard
 first; the full form, new or existing; the stop sheet; a segment's times.

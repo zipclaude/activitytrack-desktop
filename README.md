@@ -58,4 +58,10 @@ flake8 activitytrack_desktop tests
 
 ## License
 
-GPL-3.0-or-later, as the app and the web.
+Copyright © 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it>.
+
+ActivityTrack Desktop is free software under the GNU General Public License, version 3 or (at your option) any later version (`GPL-3.0-or-later`, text in [LICENSE](LICENSE)), without any warranty. Every file that can carry a comment starts with its `SPDX-License-Identifier` and `SPDX-FileCopyrightText` lines; the others (JSON, test data, images) are under the same licence.
+
+Part of the window's icons have the shape of Material Icons (Google, Apache License 2.0, text in [LICENSES/Apache-2.0.txt](LICENSES/Apache-2.0.txt)): `activitytrack_desktop/icons.py` names them.
+
+The Windows installer also holds Python, PyQt6 (GPL v3), Qt 6 (LGPL v3) and the other libraries the application needs, each under its own licence: their notices, licence files and the addresses of their sources are installed in the `third-party` folder beside the application (made by `packaging/third_party.py` at build time).

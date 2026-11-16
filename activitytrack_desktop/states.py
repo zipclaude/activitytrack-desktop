@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it>
 """
 The icon and the colour of every displayed state of an activity, in one table (docs/ACTIVITY-MODEL.md
 §2.2); the words are the library's (texts.display_label). Home cards, rows, the detail dialog and the

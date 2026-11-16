@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it>
 """
 The activities on the desktop (docs/DESIGN.md §6.1, §6.3): the commands,
 shared by the tray menu, the window and its shortcuts, and the Home as the

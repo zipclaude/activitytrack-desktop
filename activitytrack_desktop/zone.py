@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it>
 """The system's time zone: apart from the other modules, which translate their texts when imported."""
 
 from PyQt6.QtCore import QTimeZone

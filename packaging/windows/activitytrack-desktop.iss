@@ -1,4 +1,5 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
+; SPDX-FileCopyrightText: 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it>
 ; The Windows installer (docs/DESIGN.md §8): per user, no administrator
 ; rights, not signed (D10). Built by .gitlab-ci.yml (job windows-installer) with
 ; AT_VERSION (0.9.4-beta1) and AT_NUMVERSION (0.9.4) in the environment,

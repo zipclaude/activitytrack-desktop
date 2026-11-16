@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it>
 """
 The app's components, painted (docs/DESIGN.md §6.4): cards with the
 company's colour band, the round command buttons with their name under

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it>
 """
 The manual's screenshots (../activitytrack-doc/manual/desktop/img), from sample data in a
 temporary folder: no server, no personal data. --dark takes the dark

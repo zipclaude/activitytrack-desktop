@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it>
 """The windows build and say the right thing (offscreen: QT_QPA_PLATFORM=offscreen)."""
 
 import os

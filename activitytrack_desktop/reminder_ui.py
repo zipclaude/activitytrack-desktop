@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it>
 """
 The reminders on the desktop (docs/DESIGN.md §7): one timer for the next
 reminder, the notifications with the app's buttons, the answers, each

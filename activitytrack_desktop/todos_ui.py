@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it>
 """
 The Da fare section (the app's tab, issue #96): every to-do in the Home's
 sections, the done ones and the ignored ones on request, by company, with

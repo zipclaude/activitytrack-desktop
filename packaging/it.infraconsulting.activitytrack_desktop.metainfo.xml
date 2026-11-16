@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- SPDX-FileCopyrightText: 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it> -->
 <component type="desktop-application">
   <id>it.infraconsulting.activitytrack_desktop</id>
   <metadata_license>CC0-1.0</metadata_license>

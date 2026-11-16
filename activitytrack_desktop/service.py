@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it>
 """
 When the desktop syncs (docs/DESIGN.md §5.2): a few seconds after a local
 change, `sync/head` every 30 s and a sync when the server moved, when the

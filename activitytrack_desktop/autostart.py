@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it>
 """
 Starting with the desktop session (docs/DESIGN.md §3, §3.1): an XDG
 autostart entry on Linux, the Run key of the current user on Windows (the

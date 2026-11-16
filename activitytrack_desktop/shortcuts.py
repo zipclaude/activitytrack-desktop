@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it>
 """
 The commands without a window: the system-wide shortcuts (hotkeys.py)
 and the command line's --start, --pause, --stop sent to the running

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it>
 """ActivityTrack Desktop: the tray application of ActivityTrack (docs/DESIGN.md)."""
 
 # aligned with the app and the web (D6)
