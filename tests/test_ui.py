@@ -230,8 +230,8 @@ class UiTest(unittest.TestCase):
         w.tick(done)
         # ticked off three days ago: "Giorni precedenti"
         self.session.store.write("entry", done, {"closedUtcMs": w.clock() - 3 * 86_400_000}, now_ms=w.clock())
-        self.assertEqual([s for s, _i in in_app_order([("earlier", []), ("no_date", []), ("next", []),
-                                                        ("today", []), ("missing", []), ("overdue", [])])],
+        shuffled = [("earlier", []), ("no_date", []), ("next", []), ("today", []), ("missing", []), ("overdue", [])]
+        self.assertEqual([s for s, _i in in_app_order(shuffled)],
                          ["overdue", "missing", "today", "next", "no_date", "earlier"])
         for page in (Home(actions), TodosPage(actions)):
             self.addCleanup(self.dispose, page)
@@ -876,7 +876,6 @@ class GeneralUiTest(unittest.TestCase):
 
     def test_the_language_is_chosen_in_the_general_settings(self):
         """desktop#36: system default plus every language with a catalog, kept with the other preferences."""
-        from activitytrack.policy import Policy
         from activitytrack_desktop import language
         box = self.panel.language
         self.assertEqual([box.itemData(i) for i in range(box.count())], [None, "it", "en", "de", "es"])
