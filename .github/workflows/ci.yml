@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Flavio Visentin <flavio-activitytrack@infraconsulting.it>
 # CI of activitytrack-desktop on GitHub, the backup of the GitLab project: it does what .gitlab-ci.yml does
 # (keep the two in step, see CLAUDE.md). One thing starts on its own: the push of a pre-release tag
 # (vX.Y.Z-alfa-N, vX.Y.Z-beta-N), which the push mirror brings here from GitLab (a tag push runs the
@@ -237,6 +239,9 @@ jobs:
             --paths . --collect-submodules keyring.backends --collect-data tzdata `
             --collect-submodules activitytrack --collect-data activitytrack --collect-data activitytrack_desktop `
             packaging/windows/launcher.py
+          # the licence and the notices of what the bundle holds go with it into the installer (issue #38)
+          Copy-Item LICENSE dist/ActivityTrack/LICENSE.txt
+          python packaging/third_party.py dist/ActivityTrack/third-party "ActivityTrack Desktop" https://gitlab.com/activitytrack/activitytrack-desktop
       - name: Try the bundle
         run: |
           $env:QT_QPA_PLATFORM = "offscreen"

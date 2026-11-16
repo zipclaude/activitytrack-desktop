@@ -28,6 +28,8 @@ and is final at the release.
   "ignored".
 - Travel from work asks whether the work is complete; stop offers the three choices of the
   return trip.
+- The Windows installer installs, in the `third-party` folder beside the application, the licences of
+  Python, PyQt6, Qt and the other libraries it bundles, with the addresses of their sources (#38).
 
 ### Behaviour
 
