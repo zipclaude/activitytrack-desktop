@@ -152,13 +152,16 @@ class UiTest(unittest.TestCase):
         self.assertIn("Serve il cliente", d.message.text())
 
     def test_todos_on_the_home_and_in_the_tray(self):
-        from datetime import date
+        from datetime import date, datetime, time
 
         from activitytrack_desktop import forms
         from activitytrack_desktop.home import Actions, Home, TodoRow
         from activitytrack_desktop.ui import MainWindow, Tray
         self.pair()
         actions = Actions(self.session)
+        # noon today whenever the test runs: planned for 23:30, it is late for whoever runs it after 23:45
+        noon = datetime.combine(date.today(), time(12, 0)).astimezone()
+        actions.work.clock = lambda: int(noon.timestamp() * 1000)
         d = forms.TodoDialog(actions.work)
         d.title.setText("Rinnovo certificati")
         d.client.setEditText("Hotel Belvedere")
