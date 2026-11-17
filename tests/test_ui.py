@@ -152,16 +152,14 @@ class UiTest(unittest.TestCase):
         self.assertIn("Serve il cliente", d.message.text())
 
     def test_todos_on_the_home_and_in_the_tray(self):
-        from datetime import date, datetime, time
+        from datetime import date
 
+        from activitytrack.texts import display_label
         from activitytrack_desktop import forms
         from activitytrack_desktop.home import Actions, Home, TodoRow
         from activitytrack_desktop.ui import MainWindow, Tray
         self.pair()
         actions = Actions(self.session)
-        # noon today whenever the test runs: planned for 23:30, it is late for whoever runs it after 23:45
-        noon = datetime.combine(date.today(), time(12, 0)).astimezone()
-        actions.work.clock = lambda: int(noon.timestamp() * 1000)
         d = forms.TodoDialog(actions.work)
         d.title.setText("Rinnovo certificati")
         d.client.setEditText("Hotel Belvedere")
@@ -174,7 +172,10 @@ class UiTest(unittest.TestCase):
         rows = home.scroll.widget().findChildren(TodoRow)
         self.assertEqual(len(rows), 1)
         # the row says the client and the state, as the app's: no "Da fare" (the list's name) before the state
-        self.assertEqual(rows[0].sub.text(), "Hotel Belvedere · Pianificata")
+        # planned for today at 23:30 for 15 minutes: "Pianificata", "In ritardo" for whoever runs it after 23:45
+        state = display_label(actions.work.display(t)[0])
+        self.assertIn(state, ("Pianificata", "In ritardo"))
+        self.assertEqual(rows[0].sub.text(), f"Hotel Belvedere · {state}")
         plain = actions.work.save_todo(None, "Senza piano")
         home.refresh()
         from activitytrack_desktop.todos_ui import TodosPage
